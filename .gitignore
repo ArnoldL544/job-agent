@@ -13,6 +13,8 @@ browser_session/
 /jobs/
 /results/
 /resumes/
+/chunk_output/
+/Resume_*.docx
 profile.txt
 resume_details.txt
 resume-template.docx
