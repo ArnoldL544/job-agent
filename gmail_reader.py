@@ -10,8 +10,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 BASE_DIR = Path(__file__).resolve().parent
-CREDENTIALS = BASE_DIR / "credentials.json"
-TOKEN = BASE_DIR / "token.json"
+SECRETS_DIR = BASE_DIR / "secrets"
+CREDENTIALS = SECRETS_DIR / "credentials.json"
+TOKEN = SECRETS_DIR / "token.json"
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 

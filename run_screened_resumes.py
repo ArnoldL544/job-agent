@@ -30,7 +30,7 @@ PROFILE_FILE = ROOT / "profile.txt"
 TEMPLATE_FILE = ROOT / "resume-template.docx"
 DETAILS_FILE = ROOT / "resume_details.txt"
 PROFILE_JSON_FILE = ROOT / "profile_data.json"
-KEY_FILE = ROOT / "APIkey.env"
+KEY_FILE = ROOT / "secrets" / "APIkey.env"
 
 ACCEPTED_PRIORITIES = {"高匹配·优先核实", "中匹配·待核实"}
 MODEL_NAME = "gpt-5.4-mini"  # Provided by the user's existing resume_writer.py
@@ -144,7 +144,7 @@ def preflight(profile_source: str = "legacy") -> tuple[str, str]:
                        (TEMPLATE_FILE, "resume-template.docx"),
                        (ROOT / "resume_writer.py", "resume_writer.py"),
                        (ROOT / "resume_docx.py", "resume_docx.py"),
-                       (KEY_FILE, "APIkey.env")):
+                       (KEY_FILE, "secrets/APIkey.env")):
         if not path.is_file():
             raise ValueError(f"缺少文件：{name}（位于 agent project 根目录）")
     if profile_source == "json":
