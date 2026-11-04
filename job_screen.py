@@ -35,6 +35,9 @@ PROFILE = {
     "planned_work_state": "NY",  # editable assumption; not proof of 2027 residency
     "f1_student": True,
     "authorization_for_future_job_confirmed": False,
+    # (year, month) from the master resume ("Anticipated May, 2029").
+    # Update if transfer plans change the graduation date; None disables the check.
+    "expected_graduation": (2029, 5),
 }
 
 # Verified experience based on user-provided projects. Edit this list as skills grow.
@@ -55,8 +58,45 @@ SKILLS = [
     (r"\bjavascript\b", "JavaScript", 4),
     (r"\b(html|css)\b", "HTML/CSS", 3),
     (r"\b(api|apis|backend|back-end|full.?stack)\b", "API/backend", 3),
-    (r"\b(c\+\+|java|algorithms?|data structures)\b", "CS fundamentals", 3),
+    # Fixed: "\bc\+\+\b" never matched "C++ " (no word boundary after "+").
+    (r"(?<!\w)c\+\+(?!\w)|\b(?:java|algorithms?|data structures)\b", "CS fundamentals", 3),
 ]
+
+_MONTH_NUM = {m: i for i, m in enumerate(
+    "jan feb mar apr may jun jul aug sep oct nov dec".split(), start=1)}
+_SEASON_NUM = {"spring": 5, "summer": 8, "fall": 12, "autumn": 12, "winter": 12}
+_WHEN = r"(?:(?P<m>jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*|spring|summer|fall|autumn|winter)\s+(?:of\s+)?)?(?P<y>20\d{2})"
+GRAD_BY = re.compile(r"\bgraduat(?:es?|ing|ion)(?:\s+date)?\s+(?:by|before|no later than)\s+" + _WHEN, re.I)
+GRAD_IN = re.compile(r"\bgraduat(?:es?|ing|ion)(?:\s+date)?\s+(?:in|between)\s+((?:[a-z]+\s+)?20\d{2}(?:\s*(?:,|-|–|and|or|to)\s*(?:[a-z]+\s+)?20\d{2})*)", re.I)
+
+
+def _month_of(token: str | None, default: int) -> int:
+    if not token:
+        return default
+    token = token.lower()
+    return _SEASON_NUM.get(token) or _MONTH_NUM.get(token[:3], default)
+
+
+def graduation_conflict(text: str, expected: tuple[int, int] | None) -> tuple[str, str] | None:
+    """Return (reason, evidence) when an explicit graduation window excludes `expected`."""
+    if not expected:
+        return None
+    exp_year, exp_month = expected
+    m = GRAD_BY.search(text)
+    if m:
+        limit = (int(m.group("y")), _month_of(m.group("m"), 12))
+        if (exp_year, exp_month) > limit:
+            return (f"要求 {limit[0]}年{limit[1]}月前毕业，PROFILE 预计 {exp_year}年{exp_month}月毕业",
+                    clean(text[max(0, m.start() - 30):m.end() + 30]))
+    m = GRAD_IN.search(text)
+    if m:
+        years = {int(y) for y in re.findall(r"20\d{2}", m.group(1))}
+        if re.search(r"between|-|–|\bto\b", m.group(0), re.I) and len(years) == 2:
+            years = set(range(min(years), max(years) + 1))
+        if years and exp_year not in years:
+            return (f"要求毕业年份为 {'/'.join(map(str, sorted(years)))}，PROFILE 预计 {exp_year} 年毕业",
+                    clean(text[max(0, m.start() - 30):m.end() + 30]))
+    return None
 
 TITLE_ROLES = [
     (r"\b(machine learning|ai engineer|ml engineer|research (intern|assistant))\b", 23),
@@ -210,11 +250,14 @@ def classify(row: dict) -> dict:
             base["evidence"].append(found)
             break
 
-    # School graduation window / completed degree can be a hard employer requirement,
-    # but the user's *expected graduation date* is not recorded in this script.
-    # Keep it as a question, never invent a graduation year.
-    grad_rule = evidence(text, r"\b(?:graduat(?:e|ing|ion)\s+(?:date\s+)?(?:in|between|by)\s+(?:20\d{2}|(?:spring|fall|summer)\s+20\d{2})|(?:only|exclusively)\s+(?:graduate|master.?s|ph\.?d\.?)\s+students?)\b")
-    if grad_rule:
+    # Graduation window: an explicit window that excludes PROFILE["expected_graduation"]
+    # is a blocker; anything else that mentions graduation stays a question.
+    conflict = graduation_conflict(text, PROFILE.get("expected_graduation"))
+    if conflict:
+        blockers.append(conflict[0])
+        base["evidence"].append(conflict[1])
+    grad_rule = evidence(text, r"\b(?:graduat(?:es?|ing|ion)\s+(?:date\s+)?(?:in|between|by|before)\s+(?:20\d{2}|[a-z]+\s+20\d{2})|(?:only|exclusively)\s+(?:graduate|master.?s|ph\.?d\.?)\s+students?)\b")
+    if grad_rule and not conflict:
         base["flags"].append("发现毕业年份或学历层次限制，需结合实际预计毕业日期核实")
         base["evidence"].append(grad_rule)
 

@@ -1,0 +1,8 @@
+DEMO ONLY — this is a short technical test fixture, NOT a verbatim or verified official job posting.
+Full Stack and AI Agents Engineering Intern.
+Required Qualifications:
+Python, JavaScript, React, TypeScript, API, backend, frontend.
+Preferred Qualifications:
+LLM, AI agents, SQL, Git, Docker.
+Responsibilities:
+Build AI agent workflows and full stack interfaces, integrate APIs.

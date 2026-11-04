@@ -1,0 +1,8 @@
+DEMO ONLY — this is a short technical test fixture, NOT a verbatim or verified official job posting.
+Engineering Software Developer Intern.
+Required Qualifications:
+C++, debugging, testing, Git, networking.
+Preferred Qualifications:
+Python, parsing, algorithms.
+Responsibilities:
+Develop network protocol parsing tools, test and debug software.

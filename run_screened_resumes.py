@@ -25,9 +25,11 @@ ROOT = Path(__file__).resolve().parent
 JOBS_DIR = ROOT / "jobs"
 REPORT = JOBS_DIR / "job_screen_results.json"
 STATE_FILE = JOBS_DIR / "resume_draft_state.json"
+CHUNK_STATE_FILE = JOBS_DIR / "resume_chunk_draft_state.json"  # Independent from legacy state.
 PROFILE_FILE = ROOT / "profile.txt"
 TEMPLATE_FILE = ROOT / "resume-template.docx"
 DETAILS_FILE = ROOT / "resume_details.txt"
+PROFILE_JSON_FILE = ROOT / "profile_data.json"
 KEY_FILE = ROOT / "APIkey.env"
 
 ACCEPTED_PRIORITIES = {"高匹配·优先核实", "中匹配·待核实"}
@@ -109,11 +111,13 @@ def save_state(state: dict) -> None:
     temp.replace(STATE_FILE)
 
 
-def input_fingerprint(jd_file: Path) -> str:
+def input_fingerprint(jd_file: Path, profile_source: str = "legacy") -> str:
     """New JD/profile/template/supplement -> draft allowed even if previously done."""
     digest = hashlib.sha256()
     digest.update(MODEL_NAME.encode("utf-8"))
-    for item in (jd_file, PROFILE_FILE, TEMPLATE_FILE, DETAILS_FILE):
+    profile_path = PROFILE_JSON_FILE if profile_source == "json" else PROFILE_FILE
+    digest.update(profile_source.encode("utf-8"))
+    for item in (jd_file, profile_path, TEMPLATE_FILE, DETAILS_FILE):
         digest.update(item.name.encode("utf-8"))
         digest.update(item.read_bytes() if item.is_file() else b"<missing>")
     return digest.hexdigest()
@@ -133,18 +137,23 @@ def completed_before(row: dict, state: dict, fingerprint: str) -> bool:
     return True
 
 
-def preflight() -> tuple[str, Path]:
+def preflight(profile_source: str = "legacy") -> tuple[str, str]:
     """Run before creating an API client; no paid request unless all inputs exist."""
-    for path, name in ((PROFILE_FILE, "profile.txt"),
+    selected_profile_path = PROFILE_JSON_FILE if profile_source == "json" else PROFILE_FILE
+    for path, name in ((selected_profile_path, "profile_data.json" if profile_source == "json" else "profile.txt"),
                        (TEMPLATE_FILE, "resume-template.docx"),
                        (ROOT / "resume_writer.py", "resume_writer.py"),
                        (ROOT / "resume_docx.py", "resume_docx.py"),
                        (KEY_FILE, "APIkey.env")):
         if not path.is_file():
             raise ValueError(f"缺少文件：{name}（位于 agent project 根目录）")
-    profile = PROFILE_FILE.read_text(encoding="utf-8-sig").strip()
-    if not profile:
-        raise ValueError("profile.txt 为空，不能生成真实简历")
+    if profile_source == "json":
+        from profile_resume_source import read_profile_text
+        profile = read_profile_text(ROOT)
+    else:
+        profile = PROFILE_FILE.read_text(encoding="utf-8-sig").strip()
+        if not profile:
+            raise ValueError("profile.txt 为空，不能生成真实简历")
     try:
         from resume_docx import template_context
         template_context(TEMPLATE_FILE)
@@ -186,7 +195,7 @@ def list_rows(rows: list[dict], state: dict) -> None:
     print("默认只预览，不调用 OpenAI，也不申请任何职位。\n")
 
 
-def write_draft(row: dict, state: dict, *, force: bool, allow_risk: bool, yes: bool) -> str:
+def write_draft(row: dict, state: dict, *, force: bool, allow_risk: bool, yes: bool, profile_source: str = "legacy") -> str:
     jid = str(row["job_id"])
     jd_file = find_jd(row)
     if not jd_file:
@@ -209,8 +218,8 @@ def write_draft(row: dict, state: dict, *, force: bool, allow_risk: bool, yes: b
     print("注意：此操作只生成待审核简历，不表示符合申请资格，不会自动投递。")
 
     # Check presence and shape of Word template before any API spend.
-    profile, api_key = preflight()
-    fingerprint = input_fingerprint(jd_file)
+    profile, api_key = preflight(profile_source)
+    fingerprint = input_fingerprint(jd_file, profile_source)
     if completed_before(row, state, fingerprint) and not force:
         return f"SKIP {jid}: 相同 JD、profile 和模板已经有 Word 审核稿。需要重做加 --force"
 
@@ -244,6 +253,124 @@ def write_draft(row: dict, state: dict, *, force: bool, allow_risk: bool, yes: b
     return f"SUCCESS {jid}: Word 审核稿 {docx_file.name}；仍需核对资格和正文真实性"
 
 
+
+def chunk_fingerprint(jd_file: Path, master_file: Path) -> str:
+    """Invalidate stale drafts when JD, master or chunk code changes."""
+    digest = hashlib.sha256(b'chunk-tailored-v03\n')
+    for source in (jd_file, master_file, ROOT / 'resume_chunks.py',
+                   ROOT / 'resume_selector.py', ROOT / 'resume_chunk_writer.py',
+                   ROOT / 'resume_writer.py'):
+        digest.update(source.name.encode('utf-8'))
+        digest.update(source.read_bytes())
+    return digest.hexdigest()
+
+
+def write_chunk_tailored(row: dict, *, master_path: Path, force: bool,
+                         allow_risk: bool, yes: bool) -> str:
+    """Paid, opt-in Chunk -> LLM bullet polish -> original-style Word review draft.
+
+    Qualification guards match the legacy flow. The legacy draft state is never
+    overwritten, and this function never submits an application.
+    """
+    jid = str(row['job_id'])
+    jd_path = find_jd(row)
+    if not jd_path:
+        return f'SKIP {jid}: 缺少已核实的 Handshake JD 文件'
+    job = jd_path.read_text(encoding='utf-8-sig', errors='replace').strip()
+    if len(job) < 220 or 'Job description' not in job:
+        return f'SKIP {jid}: JD 内容不完整，请重新抓取'
+    blocked = restrictions(row)
+    if blocked and not allow_risk:
+        return f'SKIP {jid}: {"；".join(blocked)}。仅需制作审核草稿，可显式加 --allow-risk'
+    root = ROOT.resolve()
+    master_path = Path(master_path).resolve()
+    if not master_path.is_relative_to(root) or not master_path.is_file() or master_path.suffix.lower() != '.docx':
+        return f'FAILED {jid}: Master Word 必须是项目文件夹内的 DOCX'
+    for name in ('resume_chunks.py', 'resume_selector.py', 'resume_chunk_writer.py', 'resume_writer.py'):
+        if not (root / name).is_file():
+            return f'FAILED {jid}: 缺少 {name}'
+    from dotenv import dotenv_values
+    api_key = dotenv_values(KEY_FILE).get('OPENAI_API_KEY') if KEY_FILE.is_file() else None
+    if not isinstance(api_key, str) or not api_key.strip():
+        return f'FAILED {jid}: 未设置 APIkey.env 中的 OPENAI_API_KEY'
+    fingerprint = chunk_fingerprint(jd_path, master_path)
+    chunk_state = {}
+    if CHUNK_STATE_FILE.is_file():
+        chunk_state = json.loads(CHUNK_STATE_FILE.read_text(encoding='utf-8-sig'))
+        if not isinstance(chunk_state, dict):
+            raise ValueError('Chunk 状态文件格式错误，请先备份检查。')
+    if completed_before(row, chunk_state, fingerprint) and not force:
+        return f'SKIP {jid}: 相同输入已经生成过 Chunk+AI 审核稿；如需重做加 --force'
+    print(f'\nChunk + OpenAI Word 审核草稿：{row.get("company", "")} — {row.get("title", "")}')
+    print('不会申请岗位；姓名/教育/职位/日期/Skills 使用原始 Master 原文。')
+    for note in eligibility_notes(row) + blocked:
+        print('  资格/招聘状态仍待核实：' + str(note))
+    if not yes:
+        answer = input('确认调用付费 GPT API 优化已选 Bullet？输入 y 确认：').strip().lower()
+        if answer not in ('y', 'yes'):
+            return f'SKIP {jid}: 未获用户确认，未调用 API'
+    from openai import OpenAI
+    from resume_writer import generate_chunk_tailored_draft
+    result = generate_chunk_tailored_draft(OpenAI(api_key=api_key.strip()), master_path, job, jid, ROOT)
+    if not result:
+        return f'FAILED {jid}: AI 生成未完成；未标记为成功'
+    md_file, docx_file = Path(result['markdown']).resolve(), Path(result['docx']).resolve()
+    resume_dir = (ROOT / 'resumes').resolve()
+    if not all(path.is_relative_to(resume_dir) and path.is_file() for path in (md_file, docx_file)):
+        return f'PARTIAL {jid}: 未核实输出文件，未标记为成功'
+    chunk_state[jid] = {
+        'fingerprint': fingerprint,
+        'markdown': str(md_file.relative_to(ROOT)),
+        'docx': str(docx_file.relative_to(ROOT)),
+        'generated_at': datetime.now().isoformat(timespec='seconds'),
+        'mode': 'chunk_tailored_v03', 'eligibility_review_required': True,
+    }
+    CHUNK_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temp_state = CHUNK_STATE_FILE.with_suffix('.json.tmp')
+    temp_state.write_text(json.dumps(chunk_state, ensure_ascii=False, indent=2), encoding='utf-8')
+    temp_state.replace(CHUNK_STATE_FILE)
+    return (f'SUCCESS {jid}: Chunk+AI Word 审核稿 {docx_file.name}；'
+            f'保留 {result["selected_bullets"]} 条 Bullet，自动接受 {result["accepted_rewrites"]} 条措辞修改；'
+            f'请人工核对。')
+
+
+def write_chunk_preview(row: dict, *, master_path: Path) -> str:
+    """Offline option: use VERIFIED Handshake JD path + master DOCX chunks.
+
+    Writes only to chunk_output/handshake/. Does not call APIs, submit jobs,
+    mutate resume_draft_state, or modify the existing resume_generator flow.
+    """
+    jd_path = find_jd(row)
+    jid = str(row['job_id'])
+    if not jd_path:
+        return f"SKIP {jid}: 未找到安全的 Handshake JD 文件"
+    if not master_path.is_file():
+        return f"FAILED {jid}: Master Resume 不存在：{master_path}"
+    jd_text = jd_path.read_text(encoding='utf-8-sig', errors='replace').strip()
+    if len(jd_text) < 15:
+        return f"FAILED {jid}: JD 内容为空或过短"
+    # Imports intentionally delayed: original --list and LLM mode are untouched.
+    from resume_chunks import parse_docx
+    from resume_selector import select_chunks, export_report, render_selected_docx
+    master = parse_docx(master_path)
+    chosen = select_chunks(master, jd_text)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    output = ROOT / 'chunk_output' / 'handshake' / f'{jid}_{stamp}'
+    output.mkdir(parents=True, exist_ok=False)
+    (output / 'master_chunks.json').write_text(json.dumps(master, ensure_ascii=False, indent=2), encoding='utf-8')
+    (output / 'selection.json').write_text(json.dumps(chosen, ensure_ascii=False, indent=2), encoding='utf-8')
+    export_report(chosen, output / 'selection_review.md')
+    render_selected_docx(master_path, master, chosen, output / 'selected_resume_preview.docx')
+    print('离线 Chunk 预览：不调用 OpenAI，不自动投递，也不修改原始简历。')
+    for warning in restrictions(row) + eligibility_notes(row):
+        print('  申请资格/招聘状态待核实：' + warning)
+    if chosen['required_not_evidenced_in_resume']:
+        print('  JD 要求但简历未明确体现：' + ', '.join(chosen['required_not_evidenced_in_resume']))
+    counts = {entry['title']: entry['selected_bullets'] for entry in chosen['entries'] if entry['selected']}
+    print('  选中 Bullet 数量：' + json.dumps(counts, ensure_ascii=False))
+    return f"SUCCESS {jid}: Chunk 预览及报告已保存：{output}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="将已筛选 Handshake JD 转为逐岗审核简历")
     parser.add_argument("--list", action="store_true", help="只列出职位（默认行为）")
@@ -251,8 +378,14 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="对已明确选择的职位跳过交互确认")
     parser.add_argument("--allow-risk", action="store_true", help="明确允许为低优先级/有硬限制的职位制作草稿，不代表符合资格")
     parser.add_argument("--force", action="store_true", help="重生成相同输入的简历草稿")
+    parser.add_argument("--profile-source", choices=("legacy", "json"), default="legacy", help="Use legacy profile.txt or the saved My Profile data (json)")
     parser.add_argument("--max-drafts", type=int, default=1, help="单次最多尝试生成多少份（默认 1）")
+    parser.add_argument("--chunk-preview", action="store_true", help="离线使用 Master Resume 和真实 Handshake JD 选择 Chunk；不会调用 OpenAI")
+    parser.add_argument("--chunk-tailored", action="store_true", help="显式启用 Chunk Selection + OpenAI Bullet polishing + Word 审核稿（需要确认）")
+    parser.add_argument("--master-resume", default="Resume_Arnold Li.docx", help="Chunk 预览使用的 Master DOCX，默认项目根目录的 Resume_Arnold Li.docx")
     args = parser.parse_args()
+    if args.chunk_tailored and args.chunk_preview:
+        parser.error("--chunk-tailored 和 --chunk-preview 不能同时使用")
     if args.max_drafts < 1:
         parser.error("--max-drafts 必须 >= 1")
     rows = load_report()
@@ -272,8 +405,19 @@ def main() -> int:
             errors += 1
             continue
         try:
-            result = write_draft(lookup[jid], state, force=args.force,
-                                 allow_risk=args.allow_risk, yes=args.yes)
+            if args.chunk_preview or args.chunk_tailored:
+                # Mode is explicit. Offline preview stays free and read-only.
+                path = Path(args.master_resume)
+                if not path.is_absolute():
+                    path = ROOT / path
+                if args.chunk_preview:
+                    result = write_chunk_preview(lookup[jid], master_path=path.resolve())
+                else:
+                    result = write_chunk_tailored(lookup[jid], master_path=path.resolve(),
+                        force=args.force, allow_risk=args.allow_risk, yes=args.yes)
+            else:
+                result = write_draft(lookup[jid], state, force=args.force,
+                                     allow_risk=args.allow_risk, yes=args.yes, profile_source=args.profile_source)
             print(result)
             if result.startswith(("FAILED", "PARTIAL")):
                 errors += 1

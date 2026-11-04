@@ -1,0 +1,244 @@
+/* Job Agent / My Profile redesign — loaded by ProfileEditor.tsx.
+   Scoped styles intentionally do not change Home, Jobs or Resumes. */
+.product-profile-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  min-width: 0;
+  color: #e8f1fb;
+}
+.product-profile-workspace *, .product-profile-workspace *::before, .product-profile-workspace *::after { box-sizing: border-box; }
+.product-profile-workspace .panel {
+  border: 1px solid #293b50;
+  border-radius: 16px;
+  background: linear-gradient(155deg,#142235,#101b2b);
+  box-shadow: 0 10px 35px rgba(0,0,0,.08);
+  min-width: 0;
+}
+.product-profile-workspace .product-small-heading {
+  display: block; margin-bottom: 9px; color: #5dddc4; font-size: 10px;
+  letter-spacing: 1.4px; font-weight: 800;
+}
+/* Account / Gmail section */
+.product-profile-workspace .product-profile-connection { padding: 24px 26px; }
+.product-profile-workspace .product-profile-connection-head {
+  display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap;
+  gap: 20px; margin-bottom: 20px;
+}
+.product-profile-workspace .product-profile-connection-head > div { flex: 1 1 400px; min-width: 0; }
+.product-profile-workspace .product-profile-connection h3 {
+  margin: 0 0 8px; color: #eff6ff; font-size: 18px; font-weight: 760; line-height: 1.3;
+  letter-spacing: -.35px;
+}
+.product-profile-workspace .product-profile-connection p {
+  margin: 0; max-width: 720px; color: #9eb2c7; font-size: 12px; line-height: 1.75;
+}
+.product-profile-workspace .neutral-chip {
+  flex: 0 0 auto; display: inline-flex; padding: 8px 11px; border: 1px solid #39475c;
+  background: #1b2b3a; color: #9cbbcc; font-size: 10px; font-weight: 750;
+  letter-spacing: .65px; border-radius: 20px;
+}
+.product-profile-workspace .product-connection-steps {
+  display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 11px;
+  margin: 0 0 18px;
+}
+.product-profile-workspace .product-connection-step {
+  min-width: 0; display: flex; align-items: center; gap: 12px;
+  padding: 13px 14px; border: 1px solid #2a4257; border-radius: 11px;
+  background: #0d1b2b;
+}
+.product-profile-workspace .product-connection-step > span {
+  flex: 0 0 30px; display: grid; place-items: center; height: 30px;
+  border: 1px solid #33625b; border-radius: 9px; background: #13352e;
+  color: #64e5cb; font-weight: 800; font-size: 11px;
+}
+.product-profile-workspace .product-connection-step div { display: grid; gap: 5px; min-width: 0; }
+.product-profile-workspace .product-connection-step strong { color: #e5f0fc; font-size: 12px; font-weight: 680; line-height: 1.25; }
+.product-profile-workspace .product-connection-step small { color: #879eb2; font-size: 11px; line-height: 1.25; }
+.product-profile-workspace .product-quick-buttons {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+}
+.product-profile-workspace .secondary-button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
+  padding: 10px 14px; border-radius: 9px; border: 1px solid #375064;
+  background: #1a2d41; color: #bed1e2; font-size: 12px; font-weight: 650;
+}
+.product-profile-workspace button:disabled { cursor: not-allowed; opacity: .62; }
+/* Compact privacy / storage notice */
+.product-profile-workspace .product-profile-status {
+  display: flex; align-items: flex-start; gap: 12px; padding: 15px 18px;
+  border: 1px solid #255648; border-radius: 12px; background: #102a28;
+}
+.product-profile-workspace .product-profile-status.is-demo { border-color: #364b62; background: #112238; }
+.product-profile-workspace .product-status-dot {
+  flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%;
+  margin-top: 5px; background: #5ddfc0; box-shadow: 0 0 0 4px rgba(93,223,192,.1);
+}
+.product-profile-workspace .is-demo .product-status-dot { background: #9cb7d6; }
+.product-profile-workspace .product-profile-status strong { display: block; color: #c7f2e5; font-size: 13px; line-height: 1.35; }
+.product-profile-workspace .product-profile-status p { margin: 4px 0 0; color: #9dbdb8; font-size: 11px; line-height: 1.6; }
+/* Actual two-column form layout */
+.product-profile-workspace .product-profile-layout {
+  display: grid; grid-template-columns: 240px minmax(0,1fr); align-items: start; gap: 18px;
+}
+.product-profile-workspace .product-profile-menu {
+  display: flex; flex-direction: column; align-items: stretch; gap: 5px;
+  padding: 14px; position: sticky; top: 22px;
+}
+.product-profile-workspace .product-menu-heading {
+  padding: 10px 10px 13px; font-size: 10px; font-weight: 750;
+  color: #7894aa; letter-spacing: 1.4px;
+}
+.product-profile-workspace .product-profile-menu button {
+  width: 100%; min-width: 0; min-height: 43px; display: flex; align-items: center;
+  gap: 10px; padding: 9px 11px; border: 1px solid transparent;
+  border-radius: 9px; background: transparent; color: #9cb3c9;
+  font-size: 12px; text-align: left; line-height: 1.35;
+}
+.product-profile-workspace .product-profile-menu button:hover { background: #192f40; color: #e0eefa; }
+.product-profile-workspace .product-profile-menu button.active {
+  color: #84eed5; background: #133c37; border-color: #2b655b; font-weight: 700;
+}
+.product-profile-workspace .product-menu-index {
+  flex: 0 0 27px; display: grid; place-items: center; height: 27px;
+  border: 1px solid #314b60; background: #14283b; border-radius: 7px;
+  color: #8badc3; font-size: 10px; font-weight: 760;
+}
+.product-profile-workspace .product-profile-menu button.active .product-menu-index {
+  border-color: #347c6b; background: #1a5146; color: #96ffe4;
+}
+.product-profile-workspace .product-menu-label { flex: 1; min-width: 0; }
+.product-profile-workspace .product-menu-count {
+  flex: 0 0 auto; border-radius: 20px; background: #293d51;
+  padding: 3px 7px; color: #b3c7d9; font-size: 10px;
+}
+.product-profile-workspace .product-menu-chevron { color: #627f98; font-size: 20px; line-height: 1; }
+.product-profile-workspace .product-menu-tip {
+  border-top: 1px solid #293e51; padding: 15px 11px 3px;
+  margin: 14px 0 0; color: #7896a9; font-size: 11px; line-height: 1.7;
+}
+.product-profile-workspace .product-profile-body {
+  padding: 0; overflow: hidden;
+}
+.product-profile-workspace .product-profile-body-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; padding: 28px 30px 23px;
+  border-bottom: 1px solid #2b3c50;
+}
+.product-profile-workspace .product-profile-body-head h2 {
+  font-size: 23px; font-weight: 770; line-height: 1.3; letter-spacing: -.6px;
+  margin: 0 0 8px; color: #eff6fd;
+}
+.product-profile-workspace .product-profile-intro {
+  font-size: 12px; line-height: 1.7; margin: 0; color: #9eb3c5;
+}
+.product-profile-workspace .product-entry-count {
+  flex: 0 0 auto; padding: 6px 10px; border: 1px solid #325164;
+  border-radius: 7px; color: #9dbece; background: #182d3d; font-size: 11px;
+}
+.product-profile-workspace .product-info-banner,
+.product-profile-workspace .product-error-banner {
+  margin: 18px 30px 0; padding: 14px 16px; border-radius: 10px;
+  border: 1px solid #365672; background: #122c44; color: #c6dced;
+  font-size: 12px; line-height: 1.65;
+}
+.product-profile-workspace .product-error-banner {
+  display: flex; gap: 16px; justify-content: space-between; align-items: center;
+  background: #37232a; border-color: #9e515c; color: #ffe2e5;
+}
+.product-profile-workspace .product-profile-form {
+  display: flex; flex-direction: column; gap: 21px; padding: 27px 30px 0;
+}
+.product-profile-workspace .product-profile-fields {
+  display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 22px 20px;
+  align-items: start;
+}
+.product-profile-workspace .product-field {
+  display: flex; flex-direction: column; align-items: stretch; gap: 9px;
+  min-width: 0; width: 100%; margin: 0; color: #c7d8e8;
+}
+.product-profile-workspace .product-field.full { grid-column: 1 / -1; }
+.product-profile-workspace .product-field-label {
+  display: block; color: #c0d4e6; font-size: 12px;
+  font-weight: 650; letter-spacing: .1px;
+}
+.product-profile-workspace .product-field input,
+.product-profile-workspace .product-field textarea {
+  display: block; width: 100%; min-width: 0; min-height: 45px;
+  margin: 0; padding: 12px 14px; border: 1px solid #334e64;
+  background: #0b1928; border-radius: 9px;
+  color: #edf7ff; font-family: inherit; font-size: 13px; line-height: 1.5;
+  outline: none; appearance: none;
+}
+.product-profile-workspace .product-field textarea { min-height: 118px; resize: vertical; }
+.product-profile-workspace .product-field input::placeholder,
+.product-profile-workspace .product-field textarea::placeholder { color: #658199; opacity: 1; }
+.product-profile-workspace .product-field input:focus,
+.product-profile-workspace .product-field textarea:focus {
+  border-color: #4ce1c4; box-shadow: 0 0 0 3px rgba(76,225,196,.11);
+}
+.product-profile-workspace .product-field input:disabled,
+.product-profile-workspace .product-field textarea:disabled { opacity: .55; cursor: not-allowed; }
+.product-profile-workspace .product-profile-empty {
+  padding: 24px 23px; border: 1px dashed #39546b;
+  color: #a3bad0; background: #101f30; font-size: 12px; line-height: 1.8;
+  border-radius: 12px;
+}
+.product-profile-workspace .product-profile-record {
+  border: 1px solid #34485d; background: #0f2030; border-radius: 13px;
+  padding: 22px; display: flex; flex-direction: column; gap: 19px;
+}
+.product-profile-workspace .product-profile-record-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-bottom: 13px; border-bottom: 1px solid #2b3d50;
+}
+.product-profile-workspace .product-profile-record-head strong { font-size: 14px; font-weight: 720; }
+.product-profile-workspace .product-profile-record-head button {
+  border: 1px solid #704b52; color: #ffb6bd; background: #39232c;
+  border-radius: 8px; font-size: 11px; padding: 7px 11px;
+}
+.product-profile-workspace .product-add-button {
+  align-self: flex-start; min-height: 42px; border: 1px dashed #3e8477;
+  border-radius: 9px; padding: 11px 16px; background: #102f2f;
+  color: #78e8d3; font-size: 12px; font-weight: 720;
+}
+.product-profile-workspace .product-add-button:not(:disabled):hover { background: #174439; }
+.product-profile-workspace .product-profile-actions {
+  margin: 7px -30px 0; padding: 19px 30px;
+  display: flex; align-items: center; justify-content: space-between; gap: 15px;
+  border-top: 1px solid #30445b; background: #102031;
+}
+.product-profile-workspace .product-profile-save-state { font-size: 12px; color: #8da8bb; line-height: 1.6; }
+.product-profile-workspace .product-profile-success { color: #86e9d3; }
+.product-profile-workspace .product-profile-error { color: #ffb4b9; }
+.product-profile-workspace .product-profile-actions .primary-button {
+  flex: 0 0 auto; border: 0; color: #092524; min-height: 42px;
+  padding: 10px 22px; background: #4ce0bf; font-weight: 760;
+  border-radius: 9px; font-size: 12px;
+}
+.product-profile-workspace .product-profile-actions .primary-button:not(:disabled):hover { background: #7df1d8; }
+.product-profile-workspace button:not(:disabled):focus-visible { outline: 2px solid #79efd8; outline-offset: 2px; }
+@media (max-width: 1190px) {
+  .product-profile-workspace .product-profile-layout { grid-template-columns: 205px minmax(0,1fr); }
+  .product-profile-workspace .product-profile-menu { padding: 10px; }
+  .product-profile-workspace .product-connection-steps { grid-template-columns: 1fr; }
+}
+@media (max-width: 870px) {
+  .product-profile-workspace .product-profile-layout { grid-template-columns: 1fr; }
+  .product-profile-workspace .product-profile-menu { position: static; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .product-profile-workspace .product-menu-heading, .product-profile-workspace .product-menu-tip { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .product-profile-workspace { gap: 13px; }
+  .product-profile-workspace .product-profile-connection { padding: 19px; }
+  .product-profile-workspace .product-profile-connection-head { gap: 12px; }
+  .product-profile-workspace .product-profile-menu { grid-template-columns: 1fr; }
+  .product-profile-workspace .product-profile-fields { grid-template-columns: 1fr; }
+  .product-profile-workspace .product-profile-body-head { padding: 21px; }
+  .product-profile-workspace .product-profile-form { padding: 22px 20px 0; }
+  .product-profile-workspace .product-profile-actions { margin-left: -20px; margin-right: -20px; padding: 17px 20px; }
+  .product-profile-workspace .product-error-banner { flex-direction: column; align-items: flex-start; margin: 15px 20px 0; }
+  .product-profile-workspace .product-profile-actions { flex-direction: column; align-items: stretch; }
+  .product-profile-workspace .product-profile-actions .primary-button { width: 100%; }
+}

@@ -1,0 +1,8 @@
+DEMO ONLY — this is a short technical test fixture, NOT a verbatim or verified official job posting.
+Software Development Engineer Intern — generic SWE requirements.
+Required Qualifications:
+Python, Java, C, algorithms and data structures.
+Preferred Qualifications:
+Git, AWS, API, testing, SQL.
+Responsibilities:
+Implement backend software, debug code, develop software features, work with other engineers.

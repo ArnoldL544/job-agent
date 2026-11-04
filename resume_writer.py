@@ -396,3 +396,18 @@ def offer_resume_draft(client, profile, job, job_path, project_folder):
 
 if __name__ == "__main__":
     print("这是简历生成模块。请按文件顶部说明接入，并运行 resume_editor.py。")
+
+
+def generate_chunk_tailored_draft(client, master_file, job, job_id, project_folder):
+    """Opt-in v0.3: select verified DOCX chunks, polish ONLY selected bullets.
+
+    Leaves legacy generate_resume_draft unchanged and preserves the Master DOCX.
+    Returns a dict of result paths, or None on failed generation.
+    """
+    try:
+        from resume_chunk_writer import generate
+        return generate(client, Path(master_file), job, str(job_id), Path(project_folder) / 'resumes')
+    except Exception as exc:
+        # Do not print the exception body: upstream SDK errors can include user data.
+        print(f'Chunk-tailored draft failed ({type(exc).__name__}); nothing submitted.')
+        return None

@@ -1,0 +1,21 @@
+.ja-extra-card{display:flex;flex-direction:column;gap:16px;padding:25px;margin:18px 0;color:var(--ja-ink,#e8effa)}
+.ja-extra-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ja-extra-heading h3{margin:0;font-size:18px;font-weight:700}
+.ja-extra-caption{font-size:13px;color:#9babbd;line-height:1.55;margin:0}
+.ja-extra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.ja-extra-card label{font-size:13px;color:#b9cadd;display:flex;flex-direction:column;gap:8px}
+.ja-extra-card input:not([type="checkbox"]),.ja-extra-card select,.ja-extra-card textarea{width:100%;min-width:0;border-radius:11px;border:1px solid #334358;background:#121c2b;color:#f1f6ff;padding:11px 13px;outline:none;font:inherit}
+.ja-extra-card input:focus,.ja-extra-card select:focus,.ja-extra-card textarea:focus{border-color:#4ce0bf;box-shadow:0 0 0 2px #4ce0bf22}
+.ja-extra-card input[type="file"]{font-size:12px}
+.ja-extra-card .ja-checkbox{flex-direction:row;align-items:flex-start;gap:10px;line-height:1.5}
+.ja-checkbox input{margin-top:3px;accent-color:#4ce0bf}
+.ja-extra-actions{display:flex;gap:12px;flex-wrap:wrap}
+.ja-extra-card .primary-button,.ja-extra-card .secondary-button{width:max-content;max-width:100%}
+.ja-extra-error{color:#ffaaa7;font-size:13px;margin:0}.ja-extra-success{color:#75eed3;font-size:13px;margin:0}
+.ja-deadline-list{display:flex;flex-direction:column;gap:9px}
+.ja-deadline-list>div{display:flex;justify-content:space-between;gap:10px;border-radius:9px;background:#141f2e;padding:11px 12px;font-size:13px}
+.ja-deadline-list span{color:#aac0d4}
+.ja-history-row{border-top:1px solid #25364a;padding:8px 0}
+.ja-history-head{background:transparent;border:0;width:100%;color:#d5e2f2;display:flex;justify-content:space-between;gap:12px;text-align:left;padding:8px 0;cursor:pointer;font-size:13px}
+.ja-history-row pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;background:#0a1420;border:1px solid #293a50;padding:15px;border-radius:10px;color:#c6d7e8;font-size:12px}
+@media(max-width:720px){.ja-extra-grid{grid-template-columns:1fr}.ja-extra-card{padding:18px}.ja-extra-heading h3{font-size:16px}}
