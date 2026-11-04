@@ -1,3 +1,5 @@
+# API keys / OAuth secrets (never commit)
+/secrets/
 credentials.json
 token.json
 APIkey.env
@@ -20,3 +22,13 @@ __pycache__/
 .streamlit/secrets.toml
 
 /_old_files/
+
+/profile_data.json
+/.profile_data_*.tmp
+/application_tracker.json
+/.application_tracker_*.tmp
+/discovery_schedule.json
+/.discovery_schedule_*.tmp
+/task_history.json
+/.task_history_*.tmp
+/job-agent-release-v05/

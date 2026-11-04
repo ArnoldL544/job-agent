@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./secrets/**)",
+      "Edit(./secrets/**)",
+      "Read(./browser_session/**)",
+      "Edit(./browser_session/**)"
+    ]
+  }
+}
