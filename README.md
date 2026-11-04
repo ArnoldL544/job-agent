@@ -74,7 +74,9 @@ Personal files in the project root, also git-ignored:
 
 ## Run
 
-Start the local API and the dashboard in two terminals:
+On Windows, double-click `start.bat`. It starts the local API and the dashboard in two windows (skipping any that are already running) and opens http://localhost:3000. Close those two windows to stop.
+
+Or start them yourself in two terminals:
 
 ```bash
 python api_local.py
