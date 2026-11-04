@@ -23,6 +23,20 @@ chunk-v0.5 (still one API call, same generate() signature):
 - The rendered DOCX is page-counted with Word (pywin32) or LibreOffice when
   available; if it spills to page 2, the lowest-value bullet is removed and the
   file re-rendered. Set JOB_AGENT_VERIFY_PAGES=0 to skip this check.
+
+chunk-v0.6 (still one API call, same generate() signature):
+- The model first names what the role values (jd_focus) and rewrites each
+  bullet to lead with the matching part, using only facts in the source.
+- Wording rules are looser (equivalent leading verbs, up to 6 new words), while
+  numbers, named tools, qualifiers, impact claims (improve/optimize/scalable...)
+  and ownership escalation (led/managed/owned...) stay strictly checked. New
+  words are listed in the report under "Wording to double-check".
+- Bullets within an entry render in relevance order; skills lines are reordered
+  (same items) so JD-relevant skills come first.
+- The model asks up to 5 fact_questions for missing numbers/results instead of
+  inventing them; answers belong in the master resume.
+- Writer model defaults to gpt-5.4 (JOB_AGENT_WRITER_MODEL overrides), with one
+  retry on gpt-5.4-mini if the default model is unavailable.
 """
 from __future__ import annotations
 
@@ -39,9 +53,30 @@ import textwrap
 from resume_chunks import parse_docx
 from resume_layout import PageModel, count_pages
 from resume_selector import (detect_skills, drop_lowest, export_report, fill_page,
-                             render_selected_docx, select_chunks)
+                             render_selected_docx, select_chunks, split_skill_line)
 
-MODEL = 'gpt-5.4-mini'  # Matches the user's existing writer; change deliberately if necessary.
+# v0.6: the writing step uses the stronger model by default. Override with the
+# JOB_AGENT_WRITER_MODEL environment variable; if the default model is not
+# available on the account, the call is retried once with FALLBACK_MODEL.
+MODEL = os.environ.get('JOB_AGENT_WRITER_MODEL', 'gpt-5.4')
+FALLBACK_MODEL = 'gpt-5.4-mini'
+
+
+def _model_unavailable(exc: Exception) -> bool:
+    name = type(exc).__name__
+    text = str(exc).casefold()
+    return name in {'NotFoundError', 'PermissionDeniedError'} or (
+        'model' in text and any(s in text for s in ('not found', 'does not exist', 'not have access')))
+
+
+def _create_response(client, **kwargs) -> tuple[object, str]:
+    """One model call; on an unavailable default model, retry once with the fallback."""
+    try:
+        return client.responses.create(model=MODEL, **kwargs), MODEL
+    except Exception as exc:
+        if MODEL == FALLBACK_MODEL or not _model_unavailable(exc):
+            raise
+    return client.responses.create(model=FALLBACK_MODEL, **kwargs), FALLBACK_MODEL
 SCHEMA = {
     'type': 'json_schema', 'name': 'selected_bullet_polish', 'strict': True,
     'schema': {
@@ -92,13 +127,22 @@ factual implication, not generic praise. Original text may be kept where editing
 """
 
 # These concepts are especially susceptible to invented claims when polishing.
+# v0.6: base/-ing/noun forms of impact words are listed too ("improve data quality"
+# was not caught when only "improved" was listed), since wording rules are looser.
 STRONG_CLAIMS = {
     'production', 'deployed', 'launched', 'released', 'shipped', 'scalable',
     'improved', 'increased', 'reduced', 'accelerated', 'outperformed',
     'led', 'owned', 'architected', 'trained', 'optimized', 'fine-tuned',
     'cloud', 'distributed', 'revenue', 'users', 'real-time', 'end-to-end',
     'database', 'postgresql', 'sql', 'react', 'typescript', 'c++', 'aws',
+    'improve', 'improves', 'improving', 'improvement', 'improvements',
+    'increase', 'increasing', 'reduce', 'reducing', 'reduction',
+    'optimize', 'optimizing', 'optimization', 'deploy', 'deploying', 'deployment',
+    'scaling', 'scalability', 'production-ready', 'boosted', 'enhanced', 'enhancing',
+    'efficient', 'efficiency', 'robust', 'reliable', 'reliability',
+    'high-performance', 'faster', 'spearheaded', 'pioneered',
 }
+WRITER_VERSION = 'chunk-v0.6'
 SAFE_WORDS = {
     'a', 'an', 'and', 'the', 'of', 'with', 'to', 'in', 'on', 'for', 'from',
     'by', 'as', 'at', 'through', 'across', 'using', 'via', 'into', 'that',
@@ -126,6 +170,70 @@ LIMITED_OWNERSHIP_VERBS = {
 # bullet indent). Calibrate after checking one real rendered resume.
 CHARS_PER_LINE = 95
 MAX_MERGED_LINES = 3
+
+# v0.6: a leading verb may change only within the same group (same kind and
+# strength of action) or to a verb already used later in the same source bullet
+# ("Processed ..., filtering ..." -> "Filtered ...").
+VERB_GROUPS = (
+    {'developed', 'built', 'implemented', 'created', 'engineered', 'wrote', 'coded', 'programmed'},
+    {'analyzed', 'evaluated', 'assessed', 'examined', 'compared', 'benchmarked', 'measured'},
+    {'investigated', 'researched', 'explored', 'studied'},
+    {'processed', 'cleaned', 'filtered', 'transformed', 'preprocessed', 'prepared', 'parsed', 'extracted'},
+    {'integrated', 'connected', 'incorporated'},
+    {'automated', 'scripted'},
+    {'coordinated', 'organized', 'arranged', 'scheduled'},
+    {'presented', 'visualized', 'reported', 'documented'},
+)
+# Verbs that claim leadership/ownership; never introduced unless already in the source.
+ESCALATING_VERBS = {'led', 'lead', 'headed', 'directed', 'spearheaded', 'managed', 'owned',
+                    'architected', 'pioneered', 'founded', 'launched', 'oversaw', 'supervised'}
+MAX_NOVEL_WORDS = 6          # hard cap per rewritten bullet (was 2 before v0.6)
+MAX_NOVEL_WORDS_MERGE = 6
+MIN_RETAINED = .45           # share of the source's content words kept (was .55)
+
+
+def _stem(word: str) -> str:
+    word = word.casefold()
+    for suffix in ('ing', 'ed', 'es', 's', 'e'):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            return word[:-len(suffix)]
+    return word
+
+
+def verbs_equivalent(old: str, new: str) -> bool:
+    old, new = old.casefold(), new.casefold()
+    return old == new or any(old in g and new in g for g in VERB_GROUPS)
+
+
+def verb_change_issue(source: str, old: str, new: str) -> str | None:
+    """None if replacing leading verb `old` with `new` keeps the same claim."""
+    old, new = old.casefold(), new.casefold()
+    if old == new:
+        return None
+    if old in LIMITED_OWNERSHIP_VERBS:
+        return f'limited-ownership verb changed: {old} -> {new}'
+    source_stems = {_stem(w) for w in _words(source)}
+    if new in ESCALATING_VERBS and _stem(new) not in source_stems:
+        return f'leading verb escalates ownership: {old} -> {new}'
+    if verbs_equivalent(old, new) or _stem(new) in source_stems:
+        return None
+    return f'leading verb changed to a non-equivalent verb: {old} -> {new}'
+
+
+_ESCALATING_STEMS = {_stem(v) for v in ESCALATING_VERBS}
+
+
+def escalations(source: str, candidate: str) -> list[str]:
+    """Leadership/ownership words (led, managing, oversaw...) not backed by the source."""
+    src = {_stem(w) for w in _words(source)}
+    return sorted({w for w in _words(candidate) if _stem(w) in _ESCALATING_STEMS and _stem(w) not in src})
+
+
+def novel_terms(source: str, candidate: str) -> list[str]:
+    """Content words in the rewrite that do not come from the source (for human review)."""
+    src_stems = {_stem(w) for w in _words(source)}
+    return sorted(w for w in _words(candidate) - _words(source) - SAFE_WORDS
+                  if _stem(w) not in src_stems)
 
 
 def _words(text: str) -> set[str]:
@@ -176,22 +284,29 @@ def check_rewrite(source: str, candidate: str) -> list[str]:
         issues.append('numeric evidence added or removed')
     if detect_skills(target) != detect_skills(source):
         issues.append('named technology added or removed')
+    # v0.6: an equivalent verb (Developed -> Built) or one already in the source is
+    # allowed; ownership-limited or escalating verb changes are not.
     old_first = WORD_RE.search(source)
     new_first = WORD_RE.search(target)
-    if old_first and new_first and old_first.group().lower() != new_first.group().lower():
-        issues.append('original leading action verb changed')
+    if old_first and new_first:
+        problem = verb_change_issue(source, old_first.group(), new_first.group())
+        if problem:
+            issues.append(problem)
     src_lower, dst_lower = source.casefold(), target.casefold()
     for phrase in QUALIFIERS:
         if re.search(r'\b' + re.escape(phrase) + r'\b', src_lower) and not re.search(r'\b' + re.escape(phrase) + r'\b', dst_lower):
             issues.append('removed limiting qualifier: ' + phrase)
     for word in _new_strong_claims(source, target):
         issues.append('unsupported strong claim: ' + word)
-    new_terms = _words(target) - _words(source) - SAFE_WORDS
-    if len(new_terms) > 2:
-        issues.append('too many novel content words: ' + ', '.join(sorted(new_terms)[:6]))
-    source_terms = {t for t in _words(source) if len(t) >= 4 and t not in SAFE_WORDS}
-    retained = source_terms & _words(target)
-    if source_terms and len(retained) / len(source_terms) < .55:
+    for word in escalations(source, target):
+        if word not in STRONG_CLAIMS:
+            issues.append('unsupported ownership claim: ' + word)
+    new_terms = novel_terms(source, target)
+    if len(new_terms) > MAX_NOVEL_WORDS:
+        issues.append('too many novel content words: ' + ', '.join(new_terms[:8]))
+    source_terms = {_stem(t) for t in _words(source) if len(t) >= 4 and t not in SAFE_WORDS}
+    retained = source_terms & {_stem(t) for t in _words(target)}
+    if source_terms and len(retained) / len(source_terms) < MIN_RETAINED:
         issues.append('too much of source evidence removed')
     return issues
 
@@ -267,7 +382,10 @@ def _finalize_page(master_file: Path, master: dict, jd: str, selection: dict,
                      'reasons': ['original master bullet added to use space freed by merging/polishing']})
         values[bullet['id']] = {'phase': 'refill', 'value': item['value']}
         refilled.append(bullet['id'])
-    rows.sort(key=lambda r: index[r['anchor_id']]['paragraph'])
+    # v0.6: entries in resume order; within an entry keep the relevance order and
+    # put refilled original bullets last.
+    entry_position = {e['id']: i for i, e in enumerate(master['entries'])}
+    rows.sort(key=lambda r: entry_position[r['entry_id']])
     after = used(rows)
     return rows, {'budget_pt': round(budget, 1), 'used_before_fit_pt': round(before, 1),
                   'used_pt': round(after, 1), 'remaining_pt': round(budget - after, 1),
@@ -276,10 +394,39 @@ def _finalize_page(master_file: Path, master: dict, jd: str, selection: dict,
                   'refilled': refilled, 'dropped_for_space': [r['anchor_id'] for r in dropped]}
 
 
+def reorder_skills(master: dict, jd: str, jd_focus: list[str] | None = None) -> dict[int, str]:
+    """v0.6: within each skills line, move items the JD asks for to the front.
+
+    Pure reordering (validated again by the renderer); lines with no technical
+    items, such as spoken languages, are left alone.
+    """
+    jd_text = jd + '\n' + '\n'.join(jd_focus or [])
+    jd_skills = detect_skills(jd_text)
+    low = jd_text.casefold()
+
+    def relevant(item: str) -> bool:
+        if detect_skills(item) & jd_skills:
+            return True
+        name = item.casefold()
+        return len(name) > 2 and re.search(r'(?<![a-z0-9])' + re.escape(name) + r'(?![a-z0-9+#])', low) is not None
+
+    changes: dict[int, str] = {}
+    for line in master.get('skills', []):
+        label, items = split_skill_line(line['text'])
+        if len(items) < 2 or not any(detect_skills(i) for i in items):
+            continue
+        ordered = sorted(items, key=lambda i: not relevant(i))  # stable
+        if ordered != items:
+            changes[line['paragraph']] = (f'{label}: ' if label else '') + ', '.join(ordered)
+    return changes
+
+
 def _render_fitted(master_file: Path, master: dict, selection: dict, rows: list[dict],
-                   docx: Path, values: dict) -> tuple[list[dict], dict, list[dict], dict]:
+                   docx: Path, values: dict,
+                   skill_lines: dict[int, str] | None = None) -> tuple[list[dict], dict, list[dict], dict]:
     """Render; when Word/LibreOffice is available and the result exceeds one page,
-    drop the lowest-value bullet and re-render (at most MAX_RENDER_TRIMS times)."""
+    drop the lowest-value bullet and re-render (at most MAX_RENDER_TRIMS times).
+    v0.6: bullets render in the order of `rows` (relevance order within an entry)."""
     index = _bullet_index(master)
     verify = selection.get('page_plan') is not None and os.environ.get('JOB_AGENT_VERIFY_PAGES', '1') != '0'
     removed: list[dict] = []
@@ -291,7 +438,8 @@ def _render_fitted(master_file: Path, master: dict, selection: dict, rows: list[
         final['selected_entry_ids'] = sorted({r['entry_id'] for r in rows})
         replacements = {r['anchor_id']: r['text'] for r in rows if r['text'] != index[r['anchor_id']]['text']}
         docx.unlink(missing_ok=True)
-        render_selected_docx(master_file, master, final, docx, bullet_replacements=replacements)
+        render_selected_docx(master_file, master, final, docx, bullet_replacements=replacements,
+                             bullet_order=_chosen_from_rows(rows), skill_lines=skill_lines)
         if not verify:
             break
         pages, backend = count_pages(docx)
@@ -336,8 +484,8 @@ def polish(client, jd: str, bullets: list[dict]) -> tuple[dict[str, str], list[s
         'job_description_for_style_only': jd[:14000],
         'selected_source_bullets': bullets,
     }
-    response = client.responses.create(
-        model=MODEL, instructions=INSTRUCTIONS,
+    response, _ = _create_response(
+        client, instructions=INSTRUCTIONS,
         input=json.dumps(request, ensure_ascii=False),
         text={'format': SCHEMA}, max_output_tokens=3000, store=False,
     )
@@ -382,90 +530,6 @@ def polish(client, jd: str, bullets: list[dict]) -> tuple[dict[str, str], list[s
     return applied, warnings, review_notes, diagnostics
 
 
-def _generate_legacy(client, master_file: Path, jd: str, job_id: str, output_dir: Path,
-                     prepared: tuple | None = None) -> dict[str, Path | int]:
-    """Generate a review-only DOCX, Markdown audit and selection JSON; never overwrite."""
-    if not re.fullmatch(r'\d+', job_id):
-        raise ValueError('Job ID must be numeric.')
-    if not jd.strip() or len(jd.strip()) < 30:
-        raise ValueError('Job description is incomplete.')
-    master_file = Path(master_file).resolve()
-    master, selection, bullets = prepared or prepare(master_file, jd)
-    source_digest = hashlib.sha256(master_file.read_bytes()).hexdigest()
-    rewrites, warnings, model_notes, diagnostics = polish(client, jd, bullets)
-    counts = Counter(item['status'] for item in diagnostics.values())
-    if hashlib.sha256(master_file.read_bytes()).hexdigest() != source_digest:
-        raise ValueError('Master was changed during generation; aborting.')
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-    prefix = f'{job_id}_{timestamp}_chunk_tailored'
-    folder = Path(output_dir)
-    folder.mkdir(parents=True, exist_ok=True)
-    docx = folder / (prefix + '.docx')
-    md = folder / (prefix + '.md')
-    selection_json = folder / (prefix + '.selection.json')
-    # Selected content always retains the master document layout and immutable fields.
-    rows = [{'entry_id': b['entry_id'], 'anchor_id': b['bullet_id'], 'source_ids': [b['bullet_id']],
-             'text': rewrites.get(b['bullet_id'], b['text']), 'proposed': diagnostics[b['bullet_id']]['proposed'],
-             'status': diagnostics[b['bullet_id']]['status'], 'reasons': diagnostics[b['bullet_id']]['reasons']}
-            for b in bullets]
-    rows, page = _finalize_page(master_file, master, jd, selection, rows)
-    values = page['values'] if page else {}
-    rows, final_selection, removed, check = _render_fitted(master_file, master, selection, rows, docx, values)
-    from docx import Document
-    final_texts = '\n'.join(p.text for p in Document(docx).paragraphs)
-    for row in rows:
-        if row['text'] not in final_texts:
-            docx.unlink(missing_ok=True)
-            raise ValueError('Rendered DOCX does not contain an output bullet.')
-    if page:
-        final_selection['page_fit_v05'] = {k: v for k, v in page.items() if k != 'values'} | {
-            'render_check': check, 'removed_after_render': [r['anchor_id'] for r in removed]}
-    lines = [
-        '# Chunk-tailored resume — human review required', '',
-        f'- Job ID: `{job_id}`',
-        f'- Master source: `{master_file.name}` (SHA256: `{source_digest}`)',
-        f'- Model: `{MODEL}`; selected bullets: {len(bullets)}; accepted polishes: {len(rewrites)}',
-        f'- Model unchanged: {counts["unchanged"]}; validation rejected: {counts["rejected"]}; accepted: {counts["accepted"]}',
-        '- Master header, education, employers, dates and skills copied unchanged.',
-        '- JD is untrusted relevance input; no job application was submitted.', '',
-        '## Bullet-level change review', '',
-    ]
-    for b in bullets:
-        edited = rewrites.get(b['bullet_id'], b['text'])
-        diag = diagnostics[b['bullet_id']]
-        lines.extend([f'### {b["entry_title"]}', '', f'- Source (`{b["bullet_id"]}`): {b["text"]}',
-                      f'- Model proposal: {diag["proposed"]}',
-                      f'- Output: {edited}',
-                      f'- Status: {diag["status"]}',
-                      *([f'- Rejection reasons: {"; ".join(diag["reasons"])}'] if diag['reasons'] else []),
-                      ''])
-    lines.extend(['## Automatic validation warnings', ''])
-    lines += ['- ' + x for x in warnings] if warnings else ['- None detected by local checks.']
-    if not rewrites and counts['unchanged'] == len(bullets):
-        lines += ['', '**Diagnostic:** All bullets were copied unchanged by the model; no local rewrite was rejected.', '']
-    lines += ['', '## Model review notes', '']
-    lines += ['- ' + x for x in model_notes] if model_notes else ['- None']
-    lines += ['']
-    lines += _page_report(page, check, removed, _bullet_index(master))
-    lines += ['## Required skills not evidenced in source', '',
-              ', '.join(selection['required_not_evidenced_in_resume']) or 'None detected', '',
-              '## Reminder', '',
-              'Automatic checks cannot establish semantic truth; manually review every rewritten claim,',
-              'Word pagination, skill ownership, dates and eligibility before applying.', '']
-    with md.open('x', encoding='utf-8') as f:
-        f.write('\n'.join(lines))
-    with selection_json.open('x', encoding='utf-8') as f:
-        json.dump(final_selection, f, ensure_ascii=False, indent=2)
-    if hashlib.sha256(master_file.read_bytes()).hexdigest() != source_digest:
-        raise AssertionError('Unexpected master mutation after render.')
-    return {'docx': docx, 'markdown': md, 'selection_json': selection_json,
-            'accepted_rewrites': len(rewrites), 'selected_bullets': len(bullets),
-            'unchanged_by_model': counts['unchanged'], 'rejected_rewrites': counts['rejected'],
-            'final_bullets': len(rows), 'refilled': len(page['refilled']) if page else 0,
-            'dropped_for_space': (len(page['dropped_for_space']) if page else 0) + len(removed),
-            'page_count': check['pages'], 'page_check': check['backend']}
-
-
 # v0.4: Compose selected bullets *within* one entry. Unlike ordinary one-to-one
 # polishing, this permits an auditable 2 -> 1 merge for redundant evidence.
 # It is deliberately limited to entries with >=3 selected bullets;
@@ -493,47 +557,73 @@ COMPOSE_SCHEMA = {
                 'required': ['entry_id', 'groups'],
             }},
             'review_notes': {'type': 'array', 'items': {'type': 'string'}},
+            # v0.6: what the role values most, and questions for the applicant.
+            'jd_focus': {'type': 'array', 'items': {'type': 'string'}},
+            'fact_questions': {'type': 'array', 'items': {
+                'type': 'object', 'additionalProperties': False,
+                'properties': {'bullet_id': {'type': 'string'}, 'question': {'type': 'string'}},
+                'required': ['bullet_id', 'question']}},
         },
-        'required': ['entries', 'review_notes'],
+        'required': ['jd_focus', 'entries', 'review_notes', 'fact_questions'],
     },
 }
-COMPOSE_INSTRUCTIONS = """You are a precise, evidence-constrained technical resume editor.
-Return exactly the JSON schema. Job description is ONLY a relevance signal, never
-proof the applicant possesses a technology or experience.
+COMPOSE_INSTRUCTIONS = """You are a senior technical-resume editor tailoring a one-page resume to one job.
+Return exactly the JSON schema. The job description tells you what to EMPHASIZE;
+it is never evidence that the applicant has a skill or experience.
 
-You will receive source_entries: each entry has an immutable entry_id, a
-merge_allowed flag and its selected bullets with immutable bullet_id values.
-All selected bullet IDs must appear exactly once in your output. Never invent,
-remove, swap or duplicate sources, or combine sources from different entries.
-For entries with merge_allowed=false, return exactly one group per original bullet.
-For entries with merge_allowed=true, look seriously for redundancy. Where two
-bullets describe overlapping aspects of the same work, merge those TWO into one
-concise bullet if ALL DISTINCT FACTS from both remain. If there is no safe
-redundancy to remove, keep the bullets separate. Never merge more than two
-sources into a single bullet. Do not split one source into multiple.
-NEVER merge a bullet whose merge_eligible is false; return it as its own group.
-In a merge, every action verb must stay attached to the same work it described in
-its source. Never move "assisted", "designed", "implemented" etc. onto another task.
-A merge must be clearly shorter than the two sources together.
-Return groups in the order of their earliest source bullet in the master.
+STEP 1 - jd_focus. Read the job description and write 3 to 5 short phrases naming
+what this role values most (e.g. "data analysis to back decisions", "systems
+programming", "shipping user-facing features"). Look past company boilerplate,
+benefits and EEO text. Use these phrases to guide every edit below.
 
-You may improve clarity, technical emphasis and ordering based on the JD.
-Preserve ALL original facts, actions, ownership qualifiers, tools, languages,
-numbers, metrics, uncertainty and planned/in-progress status. Never invent
-work, tools, deployments, impact, performance, proficiency or business outcomes.
-Do not alter company names, titles, dates, header, education or skills.
-Only evidence already present in the attached source bullet(s) may be expressed.
-Avoid filler, generic praise and superficial preposition-only edits.
+STEP 2 - rewrite. You receive source_entries; each has an immutable entry_id, a
+merge_allowed flag and selected bullets with immutable bullet_id values. Every
+bullet ID must appear exactly once in your output. Never invent, drop, swap or
+duplicate IDs, or combine bullets from different entries.
 
-Example of a SAFE merge using illustrative data ONLY:
-Source A: 'Developed navigation and appointment interfaces using JavaScript.'
-Source B: 'Designed and integrated components for appointment selection.'
-Combined: 'Developed JavaScript navigation and appointment interfaces, designing
-and integrating components for appointment selection.'
-The combined text preserves BOTH actions, each on its own work, and all distinct facts.
+Rewrite each bullet so a reviewer for THIS role sees the most relevant part first:
+- Lead with the part of the source that best matches jd_focus (the data work, the
+  system built, the measurable result), then the supporting detail.
+- Prefer the source's concrete numbers, tools and outcomes over generic wording;
+  cut filler ("various", "in order to", "related", "to support").
+- Keep the leading verb, or replace it with an equivalent verb of the same strength
+  (Developed -> Built/Implemented; Analyzed -> Evaluated) or with an action already
+  described later in the same bullet (", filtering ..." -> "Filtered ...").
+  Never strengthen ownership: no Led, Managed, Owned, Architected, Spearheaded
+  unless the source says so. Keep Assisted / Supported / Contributed exactly.
+- Keep every number, named tool/language, qualifier (only, under mentor guidance,
+  planned, in progress, currently) and every distinct fact.
+- Do NOT add impact or quality claims that are not in the source: no improved,
+  increased, reduced, optimized, efficient, scalable, robust, production, users,
+  real-time, end-to-end. If a bullet would be stronger with a result the source
+  lacks, ask for it in fact_questions instead of writing it.
+- About 1 to 2 printed lines per bullet; do not make bullets much longer.
+- Keep a bullet unchanged only if it already leads with what matters for this role.
 
-It is preferable to leave an already clear bullet unchanged instead of inventing
-new claims. review_notes only when an ambiguity needs a person's attention.
+STEP 3 - merges. For entries with merge_allowed=true, merge TWO bullets of the
+same entry into one only when they describe overlapping parts of the same work,
+every distinct fact from both survives, and the result is clearly shorter. Never
+merge a bullet whose merge_eligible is false. Every action verb must stay attached
+to the work it described. Never merge more than two sources. For entries with
+merge_allowed=false return exactly one group per bullet.
+
+STEP 4 - order. Within each entry, return groups from MOST to LEAST relevant to
+jd_focus. Entry order is fixed by the resume and does not matter in your output.
+
+STEP 5 - fact_questions. Up to 5 short questions to the applicant, each tied to one
+bullet_id, asking for a specific missing fact that would make that bullet stronger
+for this role (a number, scale, result, or what they personally built). Ask only
+for facts that plausibly exist; never suggest an answer.
+
+review_notes: only ambiguities a person must check. Do not alter company names,
+titles, dates, header, education or skills.
+
+Illustrative example (NOT applicant data). Role values data analysis:
+Source: 'Developed a dashboard using Python and Tableau to display weekly sales data
+for 12 stores.'
+Good: 'Built a Python and Tableau dashboard tracking weekly sales across 12 stores.'
+Bad: 'Built a scalable dashboard that improved sales visibility for 12 stores.'
+(adds unsupported "scalable" and "improved")
 """
 
 
@@ -567,9 +657,12 @@ def check_merge(sources: list[str], candidate: str) -> list[str]:
     old, new = _words(original), _words(text)
     for word in _new_strong_claims(original, text):
         issues.append('unsupported strong claim: ' + word)
-    added = new - old - SAFE_WORDS
-    if len(added) > 4:
-        issues.append('excessive new content words: ' + ', '.join(sorted(added)[:8]))
+    for word in escalations(original, text):
+        if word not in STRONG_CLAIMS:
+            issues.append('unsupported ownership claim: ' + word)
+    added = novel_terms(original, text)
+    if len(added) > MAX_NOVEL_WORDS_MERGE:
+        issues.append('excessive new content words: ' + ', '.join(added[:8]))
     for i, source in enumerate(sources, 1):
         terms = _meaningful_terms(source)
         if terms and len(new & terms) / len(terms) < .37:
@@ -578,8 +671,10 @@ def check_merge(sources: list[str], candidate: str) -> list[str]:
     if pooled and len(new & pooled) / len(pooled) < .56:
         issues.append('too much combined evidence removed')
     # v0.4.1: BOTH original action verbs must survive (was: any one of them).
+    # v0.6: an equivalent verb counts (Developed -> Built), except for
+    # ownership-limited verbs, which never reach here (merge_blockers).
     verbs = [m.group().casefold() for m in (WORD_RE.search(s) for s in sources) if m]
-    lost = [v for v in verbs if v not in new]
+    lost = [v for v in verbs if not any(verbs_equivalent(v, w) for w in new)]
     if lost:
         issues.append('lost original action verb: ' + ', '.join(lost))
     return issues
@@ -609,16 +704,18 @@ def _fallback_rows(entry: dict, reason: str) -> list[dict]:
             for b in entry['bullets']]
 
 
-def compose(client, jd: str, entries: list[dict]) -> tuple[list[dict], list[str], list[str], dict[str, int]]:
+def compose(client, jd: str, entries: list[dict]) -> tuple[list[dict], list[str], list[str], dict[str, int], dict]:
     """One API call. Check provenance before accepting *any* structural edits.
 
     Unknown or cross-entry IDs abort before writing (provenance is broken).
     v0.4.1: an entry whose groups are otherwise malformed (omitted/duplicate IDs,
-    illegal merge) falls back to its original bullets; out-of-order groups are
-    simply sorted. If a proposed merge is unsafe, that pair reverts to originals.
+    illegal merge) falls back to its original bullets. If a proposed merge is
+    unsafe, that pair reverts to originals.
+    v0.6: groups keep the model's within-entry order (most relevant first); also
+    returns extras = {'jd_focus', 'fact_questions', 'model'}.
     """
     request = {
-        'job_description_for_style_only': jd[:14000],
+        'job_description': jd[:14000],
         'source_entries': [
             {'entry_id': e['entry_id'], 'entry_title': e['entry_title'],
              'merge_allowed': e['merge_allowed'],
@@ -627,10 +724,10 @@ def compose(client, jd: str, entries: list[dict]) -> tuple[list[dict], list[str]
             for e in entries
         ],
     }
-    response = client.responses.create(
-        model=MODEL, instructions=COMPOSE_INSTRUCTIONS,
+    response, model_used = _create_response(
+        client, instructions=COMPOSE_INSTRUCTIONS,
         input=json.dumps(request, ensure_ascii=False),
-        text={'format': COMPOSE_SCHEMA}, max_output_tokens=4300, store=False,
+        text={'format': COMPOSE_SCHEMA}, max_output_tokens=6000, store=False,
     )
     if getattr(response, 'status', None) != 'completed':
         raise ValueError('Incomplete composition response; no draft saved.')
@@ -690,8 +787,7 @@ def compose(client, jd: str, entries: list[dict]) -> tuple[list[dict], list[str]
             warnings.append(f'{eid}: {problem}; entry kept as original bullets.')
             outputs.extend(_fallback_rows(original, problem))
             continue
-        # v0.4.1: order is cosmetic; sort rather than abort a paid draft.
-        group_rows.sort(key=lambda row: min(by_id[x]['paragraph'] for x in row[0]))
+        # v0.6: keep the model's order (most relevant to the JD first).
         for ids, proposal in group_rows:
             source = [by_id[x]['text'] for x in ids]
             proposed = ' '.join(proposal.split())
@@ -733,14 +829,23 @@ def compose(client, jd: str, entries: list[dict]) -> tuple[list[dict], list[str]
         stats['entry_fallbacks'] += 1
         warnings.append(f'{eid}: entry missing from model output; kept as original bullets.')
         outputs.extend(_fallback_rows(by_entry[eid], 'entry missing from model output'))
-    # Return in actual Word paragraph order, independent of model response order.
-    anchor_position = {b['bullet_id']: b['paragraph'] for e in entries for b in e['bullets']}
-    outputs.sort(key=lambda row: anchor_position[row['anchor_id']])
+    # Entries in resume order; within an entry, the model's relevance order is kept
+    # (stable sort). Fallback entries keep their original Word order.
+    entry_position = {e['entry_id']: i for i, e in enumerate(entries)}
+    outputs.sort(key=lambda row: entry_position[row['entry_id']])
     covered = [x for row in outputs for x in row['source_ids']]
     if sorted(covered) != sorted(owner):
         raise AssertionError('Composition output does not cover every selected bullet exactly once.')
     notes = [x[:300] for x in payload['review_notes'][:10] if isinstance(x, str) and x.strip()]
-    return outputs, warnings, notes, dict(stats)
+    extras = {'model': model_used,
+              'jd_focus': [x.strip()[:120] for x in (payload.get('jd_focus') or [])[:5]
+                           if isinstance(x, str) and x.strip()],
+              'fact_questions': [
+                  {'bullet_id': q['bullet_id'], 'question': q['question'].strip()[:300]}
+                  for q in (payload.get('fact_questions') or [])[:5]
+                  if isinstance(q, dict) and q.get('bullet_id') in owner
+                  and isinstance(q.get('question'), str) and q['question'].strip()]}
+    return outputs, warnings, notes, dict(stats), extras
 
 
 def _generate_composed(client, master_file: Path, jd: str, job_id: str, output_dir: Path,
@@ -752,10 +857,10 @@ def _generate_composed(client, master_file: Path, jd: str, job_id: str, output_d
     prepared = prepared or prepare(master_file, jd)
     master, selection, selected_bullets = prepared
     groups = groups if groups is not None else _selected_groups(master, selection)
-    if not any(e['merge_allowed'] for e in groups):
-        return _generate_legacy(client, master_file, jd, job_id, output_dir, prepared=prepared)
+    # v0.6: always this path (one call); entries without merge_allowed get
+    # one-to-one JD-aware rewrites, so the old polish-only path is not needed.
     source_digest = hashlib.sha256(master_file.read_bytes()).hexdigest()
-    composed, warnings, notes, counts = compose(client, jd, groups)
+    composed, warnings, notes, counts, extras = compose(client, jd, groups)
     if hashlib.sha256(master_file.read_bytes()).hexdigest() != source_digest:
         raise ValueError('Master changed during generation.')
     # Reuse v0.3 renderer by mapping each composed line to its earliest source
@@ -772,7 +877,14 @@ def _generate_composed(client, master_file: Path, jd: str, job_id: str, output_d
     docx = folder / (prefix + '.docx')
     md = folder / (prefix + '.md')
     selection_json = folder / (prefix + '.selection.json')
-    composed, final_selection, removed, check = _render_fitted(master_file, master, selection, composed, docx, values)
+    skill_lines = reorder_skills(master, jd, extras['jd_focus'])
+    composed, final_selection, removed, check = _render_fitted(master_file, master, selection, composed, docx,
+                                                               values, skill_lines=skill_lines)
+    final_selection['writer_v06'] = {
+        'version': WRITER_VERSION, 'model': extras['model'], 'jd_focus': extras['jd_focus'],
+        'fact_questions': extras['fact_questions'],
+        'skills_reordered': {str(k): v for k, v in skill_lines.items()},
+        'bullet_order': _chosen_from_rows(composed)}
     final_selection['composition_v04'] = [
         {k: x[k] for k in ('entry_id', 'source_ids', 'anchor_id', 'status', 'text', 'proposed', 'reasons',
                            'lines_before', 'lines_after') if k in x}
@@ -790,17 +902,39 @@ def _generate_composed(client, master_file: Path, jd: str, job_id: str, output_d
     original_selected = len(selected_bullets)
     accepted_rewrites = counts.get('rewritten', 0) + counts.get('accepted_merges', 0)
     lines_saved = counts.get('estimated_lines_saved', 0)
+    index_text = {bid: b['text'] for bid, b in index.items()}
+    to_check = []
+    for row in composed:
+        if row['status'] in ('rewritten', 'merged'):
+            source = ' '.join(index_text[b] for b in row['source_ids'])
+            terms = novel_terms(source, row['text'])
+            if terms:
+                to_check.append(f'{row["text"]}  \n  New wording: {", ".join(terms)}')
     lines = [
-        '# Chunk-tailored resume — chunk-v0.5 composition (human review required)', '',
+        f'# Chunk-tailored resume — {WRITER_VERSION} (human review required)', '',
         f'- Job ID: `{job_id}`',
         f'- Master source: `{master_file.name}` (SHA256: `{source_digest}`)',
-        f'- Model: `{MODEL}`; selected source bullets: {original_selected}; final Word bullets: {len(composed)}',
+        f'- Model: `{extras["model"]}`; selected source bullets: {original_selected}; final Word bullets: {len(composed)}',
         f'- Proposed merges: {counts.get("proposed_merges",0)}; accepted merges: {counts.get("accepted_merges",0)}; rejected merges: {counts.get("rejected_merges",0)}',
         f'- Rewritten singles: {counts.get("rewritten",0)}; unchanged singles: {counts.get("unchanged",0)}; rejected singles: {counts.get("rejected_rewrites",0)}',
         f'- Entry fallbacks (malformed model output, originals kept): {counts.get("entry_fallbacks",0)}',
         f'- Estimated Word lines saved by merges: {lines_saved} (at {CHARS_PER_LINE} chars/line; confirm in Word)',
-        '- Company, title, dates, education, skills and header remain copied from Master.',
+        '- Company, title, dates, education and header remain copied from Master; '
+        'skills lines are only reordered (same items).',
+        '- Bullets within each entry are ordered by relevance to this role.',
         '- No automatic job application; all candidate claims require human review.', '',
+        '## What this role values (model reading of the JD)', '',
+        *(['- ' + x for x in extras['jd_focus']] or ['- (none returned)']), '',
+        '## Questions to strengthen your master resume', '',
+        'Answer these in `Resume_*.docx` if true; the next draft can then use the facts.', '',
+        *([f'- {q["question"]}  \n  Bullet: {index_text[q["bullet_id"]]}' for q in extras['fact_questions']]
+          or ['- None']), '',
+        '## Wording to double-check', '',
+        'Words below are not in the source bullet. They passed the automatic checks, '
+        'but confirm each one is accurate.', '',
+        *(['- ' + x for x in to_check] or ['- None']), '',
+        *(['## Skills reordered for this role', '', *[f'- {t}' for t in skill_lines.values()], '']
+          if skill_lines else []),
         '## Source-linked output bullets', '',
     ]
     name_map = {e['id']: e['title'] for e in master['entries']}
@@ -841,17 +975,16 @@ def _generate_composed(client, master_file: Path, jd: str, job_id: str, output_d
             'estimated_lines_saved': lines_saved,
             'refilled': len(page['refilled']) if page else 0,
             'dropped_for_space': (len(page['dropped_for_space']) if page else 0) + len(removed),
-            'page_count': check['pages'], 'page_check': check['backend']}
+            'page_count': check['pages'], 'page_check': check['backend'],
+            'model': extras['model'], 'fact_questions': len(extras['fact_questions'])}
 
 
 def generate(client, master_file: Path, jd: str, job_id: str,
              output_dir: Path) -> dict[str, Path | int]:
-    """v0.4 entry-aware composition when meaningful; v0.3.1 otherwise."""
+    """chunk-v0.6: one JD-aware composition call for every draft."""
     # prepare() has no API cost; v0.4.1 runs it once and passes the result on.
     master_file = Path(master_file).resolve()
     prepared = prepare(master_file, jd)
     groups = _selected_groups(prepared[0], prepared[1])
-    if any(e['merge_allowed'] for e in groups):
-        return _generate_composed(client, master_file, jd, job_id, output_dir,
-                                  prepared=prepared, groups=groups)
-    return _generate_legacy(client, master_file, jd, job_id, output_dir, prepared=prepared)
+    return _generate_composed(client, master_file, jd, job_id, output_dir,
+                              prepared=prepared, groups=groups)

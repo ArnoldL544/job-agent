@@ -134,7 +134,8 @@ class ComposeStructureTests(unittest.TestCase):
         self.master = self.root / 'master.docx'
         create_master(self.master)
 
-    def test_out_of_order_groups_are_sorted_not_fatal(self):
+    def test_model_group_order_is_kept_not_fatal(self):
+        # v0.6: groups render in the model's relevance order (was: master order).
         def build(req):
             out = []
             for e in req['source_entries']:
@@ -151,7 +152,7 @@ class ComposeStructureTests(unittest.TestCase):
         self.assertEqual(result['entry_fallbacks'], 0)
         self.assertGreaterEqual(result['estimated_lines_saved'], 1)
         paras = [p.text for p in Document(result['docx']).paragraphs]
-        self.assertLess(paras.index(MERGED), next(i for i, p in enumerate(paras) if p.startswith('Implemented dynamic')))
+        self.assertGreater(paras.index(MERGED), next(i for i, p in enumerate(paras) if p.startswith('Implemented dynamic')))
         audit = result['markdown'].read_text(encoding='utf-8')
         self.assertIn('Estimated Word lines saved by merges', audit)
         # Request now carries merge_eligible flags and no duplicated bullet list.

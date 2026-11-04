@@ -666,13 +666,51 @@ def export_report(selection: dict[str, Any], output: str | Path) -> None:
     out.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
+def split_skill_line(text: str) -> tuple[str, list[str]]:
+    """'Label: a, b, c' -> ('Label', ['a', 'b', 'c']); no label -> ('', items)."""
+    label, sep, rest = text.partition(':')
+    if not sep:
+        label, rest = '', text
+    return label.strip(), [x.strip() for x in rest.split(',') if x.strip()]
+
+
+def _same_skill_items(old: str, new: str) -> bool:
+    old_label, old_items = split_skill_line(old)
+    new_label, new_items = split_skill_line(new)
+    return old_label == new_label and sorted(old_items) == sorted(new_items)
+
+
+def _set_skill_line(paragraph, old_text: str, new_text: str) -> None:
+    """Rewrite a skills paragraph, keeping the label run (and its formatting) intact."""
+    runs = [r for r in paragraph.runs]
+    if not runs:
+        raise ValueError('Unexpected skills line without text runs.')
+    label, _ = split_skill_line(old_text)
+    if label and runs[0].text.strip() == label and len(runs) > 1:
+        runs[1].text = new_text[new_text.index(':'):]
+        rest = runs[2:]
+    else:
+        first = next((r for r in runs if r.text), runs[0])
+        first.text = new_text
+        rest = [r for r in runs if r._r is not first._r]
+    for run in rest:
+        run.text = ''
+
+
 def render_selected_docx(master_file: str | Path, master: dict[str, Any],
                          selection: dict[str, Any], output_file: str | Path,
-                         bullet_replacements: dict[str, str] | None = None) -> None:
+                         bullet_replacements: dict[str, str] | None = None,
+                         bullet_order: dict[str, list[str]] | None = None,
+                         skill_lines: dict[int, str] | None = None) -> None:
     """Remove unselected paragraphs from a COPY; preserve master wording and facts.
 
     Add visible vertical spacing between *different entry chunks* inside a
     section without allowing title/role to split across pages.
+
+    v0.6: `bullet_order` ({entry_id: [bullet ids]}) reorders an entry's kept
+    bullets; it must be a permutation of that entry's selected bullets.
+    `skill_lines` ({paragraph index: text}) may only reorder the comma-separated
+    items of a skills line; the label and the set of items must stay identical.
     """
     from docx import Document
     from docx.shared import Pt
@@ -702,10 +740,32 @@ def render_selected_docx(master_file: str | Path, master: dict[str, Any],
         first.text = rewritten.strip()
         for run in runs:
             if run._r is not first._r:
-                run.text = '' 
-    to_remove: set[int] = set()
+                run.text = ''
+    skill_paragraphs = {s['paragraph']: s['text'] for s in master.get('skills', [])}
+    for idx, new_text in (skill_lines or {}).items():
+        old_text = skill_paragraphs.get(idx)
+        if old_text is None or not _same_skill_items(old_text, new_text):
+            raise ValueError('Skills line change is not a pure reordering of its items.')
+        _set_skill_line(paragraphs[idx], old_text, new_text)
     kept_entries = set(selection['selected_entry_ids'])
     kept_bullets = set(selection['selected_bullet_ids'])
+    for entry in master['entries']:
+        order = (bullet_order or {}).get(entry['id'])
+        if not order or entry['id'] not in kept_entries:
+            continue
+        kept_here = [b for b in entry['bullets'] if b['id'] in kept_bullets]
+        if sorted(order) != sorted(b['id'] for b in kept_here):
+            raise ValueError('Bullet order must be a permutation of the entry\'s selected bullets.')
+        by_id = {b['id']: b for b in kept_here}
+        first_el = paragraphs[min(b['paragraph'] for b in kept_here)]._element
+        anchor = first_el.getprevious()
+        for bid in order:
+            el = paragraphs[by_id[bid]['paragraph']]._element
+            if el is anchor:
+                continue
+            anchor.addnext(el)
+            anchor = el
+    to_remove: set[int] = set()
     for entry in master['entries']:
         if entry['id'] not in kept_entries:
             to_remove.add(entry['title_paragraph'])
