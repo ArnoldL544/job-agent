@@ -125,9 +125,9 @@ Get-ChildItem tests\test_*.py | ForEach-Object { python $_.FullName }
 - `secrets/`, `browser_session/`, personal profiles, resumes and job data are git-ignored.
 - Gmail access uses the `gmail.readonly` scope.
 
-## Changelog
+## Old files
 
-Resume chunking changes are described in [README_chunk-v0.5.md](README_chunk-v0.5.md). Superseded scripts are kept locally in `oldfolder/`, which is git-ignored.
+Superseded scripts and earlier upgrade notes are kept locally in `oldfolder/`, which is git-ignored.
 
 ## Disclaimer
 
