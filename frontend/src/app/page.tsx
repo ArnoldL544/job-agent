@@ -65,7 +65,7 @@ type Job = {
 
 type JobsApiResponse = { jobs: Job[]; count: number };
 type JobDetail = { jobId: string; hasJd: boolean; jdText: string; jdFilename: string | null; priority: string; screeningNotes: string[] };
-type ResumeRecord = { id: string; jobId: string; index: number; company: string; jobTitle: string; filename: string; updatedAt: string; hasTextPreview: boolean };
+type ResumeRecord = { id: string; jobId: string; index: number; company: string; jobTitle: string; filename: string; updatedAt: string; hasTextPreview: boolean; kind?: "tailored" | "profile" };
 type ResumeApiResponse = { count: number; resumes: ResumeRecord[] };
 type ResumePreview = { jobId: string; filename: string; source: string; text: string };
 type LocalTask = { id: string; action: string; status: "queued" | "running" | "succeeded" | "failed"; startedAt: number; endedAt: number | null; returnCode: number | null; logs: string[] };
@@ -127,6 +127,7 @@ export default function Home() {
   const [confirmRead, setConfirmRead] = useState(false);
   const [confirmPaid, setConfirmPaid] = useState(false);
   const [profileSource, setProfileSource] = useState<"json" | "legacy">("json");
+  const [resumeEngine, setResumeEngine] = useState<"chunk" | "profile">("chunk");
   const [resumeRefresh, setResumeRefresh] = useState(0);
   const [allowRisk, setAllowRisk] = useState(false);
   const [forceDraft, setForceDraft] = useState(false);
@@ -337,14 +338,19 @@ export default function Home() {
                 {jobs.map(job => <option key={job.id} value={job.id}>{job.company} — {job.title} ({job.score}/100)</option>)}
               </select>
             </label>
-            <label className="stage5-field">Resume information source
-              <select value={profileSource} onChange={e => setProfileSource(e.target.value as "json" | "legacy")}><option value="json">My Profile (recommended)</option><option value="legacy">Legacy profile.txt</option></select>
+            <label className="stage5-field">How to write the draft
+              <select value={resumeEngine} onChange={e => setResumeEngine(e.target.value as "chunk" | "profile")}><option value="chunk">Tailor my master resume (recommended)</option><option value="profile">Write a new draft from My Profile</option></select>
             </label>
-            <p className="stage4-muted">My Profile must have at least one saved education, experience, or skill entry. The original profile.txt is never overwritten.</p>
+            {resumeEngine === "chunk" ? <p className="stage4-muted">Picks the most relevant bullets from Resume_&lt;Name&gt;.docx in the project folder, rewrites them for this job using only facts already in your resume, and fits one page. The review notes list what the job values and questions for facts you could add.</p> : <>
+              <label className="stage5-field">Resume information source
+                <select value={profileSource} onChange={e => setProfileSource(e.target.value as "json" | "legacy")}><option value="json">My Profile (recommended)</option><option value="legacy">Legacy profile.txt</option></select>
+              </label>
+              <p className="stage4-muted">My Profile must have at least one saved education, experience, or skill entry. The original profile.txt is never overwritten.</p>
+            </>}
             <label className="stage5-check"><input type="checkbox" checked={allowRisk} onChange={e => setAllowRisk(e.target.checked)} /> I acknowledge that eligibility or deadline restrictions may require independent verification (only use if needed).</label>
             <label className="stage5-check"><input type="checkbox" checked={forceDraft} onChange={e => setForceDraft(e.target.checked)} /> Regenerate an existing matching draft (may incur additional cost)</label>
             <label className="stage5-check"><input type="checkbox" checked={confirmPaid} onChange={e => setConfirmPaid(e.target.checked)} /> I explicitly approve generating ONE paid AI resume draft for this selected job.</label>
-            <button className="primary-button" disabled={!confirmPaid || taskBusy || !jobs.length} onClick={() => startLocalTask({action:"resume",jobId:draftJobId || jobs[0].id, confirmPaid:true,allowRisk,force:forceDraft,profileSource})}><Icon name="sparkles" size={16}/>{taskBusy ? "Task running..." : "Generate review draft"}</button>
+            <button className="primary-button" disabled={!confirmPaid || taskBusy || !jobs.length} onClick={() => startLocalTask({action:"resume",jobId:draftJobId || jobs[0].id, confirmPaid:true,allowRisk,force:forceDraft,engine:resumeEngine,profileSource})}><Icon name="sparkles" size={16}/>{taskBusy ? "Task running..." : "Generate review draft"}</button>
           </section>
           {stage5Monitor}
           {resumesError && <div className="panel stage4-warning">{resumesError}</div>}
@@ -355,7 +361,7 @@ export default function Home() {
                 {resumes.map(item => <button key={item.id} className={`stage4-resume-item ${activeResume?.id === item.id ? "stage4-active" : ""}`} onClick={() => setActiveResumeId(item.id)}>
                   <span className="stage4-resume-title">{item.jobTitle}</span>
                   <span className="stage4-muted">{item.company} · {item.jobId}</span>
-                  <span className="stage4-small">{new Date(item.updatedAt).toLocaleString()}</span>
+                  <span className="stage4-small">{item.kind === "tailored" ? "Tailored from master · " : ""}{new Date(item.updatedAt).toLocaleString()}</span>
                 </button>)}
               </section>
               <section className="panel stage4-resume-preview">

@@ -325,13 +325,24 @@ def jd_path(row: dict) -> Path | None:
     return None
 
 
+# Profile-based drafts and chunk-editor drafts (tailored from the master resume).
+DRAFT_SUFFIXES = ("_resume_draft.docx", "_chunk_tailored.docx")
+
+
+def master_resume() -> Path | None:
+    """Newest Resume_<Name>.docx in the project root: the chunk editor's source."""
+    files = [p for p in ROOT.glob("Resume_*.docx") if p.is_file()]
+    return max(files, key=lambda p: p.stat().st_mtime) if files else None
+
+
 def resumes_for(jid: str) -> list[Path]:
     """Match generated Word drafts by numeric ID, never by user-supplied filename."""
     if not JOB_ID.fullmatch(jid):
         return []
     found: list[Path] = []
     if RESUMES.is_dir():
-        found.extend(RESUMES.glob(f"{jid}_*_resume_draft.docx"))
+        for suffix in DRAFT_SUFFIXES:
+            found.extend(RESUMES.glob(f"{jid}_*{suffix}"))
     state = read_json(RESUME_STATE, {})
     entry = state.get(jid) if isinstance(state, dict) else None
     if isinstance(entry, dict) and isinstance(entry.get("docx"), str):
@@ -340,7 +351,7 @@ def resumes_for(jid: str) -> list[Path]:
     for candidate in found:
         p = candidate.resolve()
         if (p.is_relative_to(RESUMES.resolve()) and p.is_file()
-                and p.name.startswith(jid + "_") and p.name.endswith("_resume_draft.docx")):
+                and p.name.startswith(jid + "_") and p.name.endswith(DRAFT_SUFFIXES)):
             safe[str(p)] = p
     return sorted(safe.values(), key=lambda p: p.stat().st_mtime, reverse=True)
 
@@ -393,6 +404,7 @@ def resume_entries() -> list[dict]:
                             "company": str(row.get("company") or "Unknown company")[:180],
                             "jobTitle": str(row.get("title") or "Untitled position")[:200],
                             "filename": path.name, "updatedAt": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
+                            "kind": "tailored" if path.name.endswith("_chunk_tailored.docx") else "profile",
                             "hasTextPreview": md.is_file()})
     entries.sort(key=lambda item: item["updatedAt"], reverse=True)
     return entries
@@ -500,7 +512,17 @@ def start_task(payload: dict) -> tuple[dict, int]:
         if blocked and payload.get("allowRisk") is not True:
             return {"error": "This job needs separate acknowledgement of screening restrictions"}, 409
         command = ["run_screened_resumes.py", "--job-id", jid, "--yes"]
-        if payload.get("profileSource", "json") == "json":
+        engine = payload.get("engine", "chunk")
+        if engine == "chunk":
+            # Tailor from the master resume (chunk editor): selection, JD-aware
+            # rewrites and fact questions. My Profile is not used in this mode.
+            master = master_resume()
+            if master is None:
+                return {"error": "Put your master resume in the project folder as Resume_<Name>.docx"}, 409
+            command += ["--chunk-tailored", "--master-resume", master.name]
+        elif engine != "profile":
+            return {"error": "Unknown resume engine"}, 400
+        elif payload.get("profileSource", "json") == "json":
             # Do not silently fall back to stale profile.txt.
             from profile_resume_source import read_profile_text
             try:
