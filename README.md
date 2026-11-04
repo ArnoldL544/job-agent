@@ -1,156 +1,134 @@
-
 # AI Job Agent
 
-An AI-powered job discovery, screening, and resume generation system built with Python.
+A local job-search assistant. It reads Handshake job notifications from Gmail, extracts each job description, screens it for fit and eligibility, and drafts a one-page Word resume tailored to the job from your master resume. A Next.js dashboard drives everything through a local Python API.
+
+Nothing is submitted automatically. Every resume is a draft for you to review, and paid OpenAI calls only run after you approve them for a specific job.
 
 ## Features
 
-- Gmail API integration for Handshake job notifications
-- Automated job URL verification
-- Job description extraction using Playwright
-- Rule-based job matching and eligibility screening
-- AI-powered resume customization using OpenAI
-- Word resume generation with python-docx
-- Interactive Streamlit dashboard
-- Duplicate detection and processing history
-- Human review before any application
-
-## Tech Stack
-
-- **Language:** Python
-- **Frontend:** Streamlit
-- **Browser Automation:** Playwright
-- **Email Integration:** Gmail API, OAuth 2.0
-- **AI Model:** OpenAI GPT-5.4-mini
-- **Web Parsing:** BeautifulSoup
-- **Document Generation:** python-docx
+- Gmail API import of Handshake job notification emails (read-only scope)
+- Job description extraction with Playwright
+- Rule-based screening: match level, OPT/CPT and eligibility flags, location
+- Chunk-based resume tailoring: picks the most relevant sections and bullets from your master resume, fills exactly one page, and polishes bullets with one OpenAI call
+- Offline preview of the chunk selection, with no API call
+- Next.js dashboard: job list, job details, resume preview/download/upload, profile editor, application tracker, schedule
+- Local-only API on `127.0.0.1:8765`
 
 ## Architecture
 
 ```text
-                 Gmail
-                   |
-                   v
-        Handshake Email Import
-                   |
-                   v
-         Job URL Verification
-                   |
-                   v
-       Job Description Extraction
-                   |
-                   v
-            Job Screening
-                   |
-                   v
-         Resume Generation
-          (GPT-5.4-mini)
-                   |
-                   v
-        Word Document (.docx)
-                   |
-                   v
-             Human Review
+frontend/ (Next.js, localhost:3000)
+        │  HTTP
+        ▼
+api_local.py  (127.0.0.1:8765)
+        ├─ profile_resume_source.py        profile_data.json → resume input
+        ├─ run_full_agent.py               full pipeline
+        ├─ run_email_jobs.py               import + read + screen
+        │     ├─ handshake_email_import.py ─ gmail_reader.py
+        │     ├─ job_reader.py             Playwright JD extraction
+        │     └─ job_screen.py             fit / eligibility screening
+        └─ run_screened_resumes.py         resume drafts for screened jobs
+              ├─ resume_writer.py ─ resume_docx.py      template-based draft
+              └─ resume_chunk_writer.py                 chunk-tailored draft
+                    ├─ resume_chunks.py     parse master .docx into chunks
+                    ├─ resume_selector.py   choose chunks for the JD
+                    └─ resume_layout.py     one-page fit and page check
 ```
 
-The system uses a modular Python architecture.
-Each component handles a specific stage of the job application workflow.
+## Setup
 
-## Installation
-
-Clone the repository and install dependencies:
+### 1. Python
 
 ```bash
 pip install -r requirements.txt
-```
-
-Install Playwright Chromium:
-
-```bash
 python -m playwright install chromium
 ```
 
-Configure the following local files:
+Optional, for the real page-count check in `resume_layout.py`: Microsoft Word with `pywin32`, or LibreOffice.
 
-- `credentials.json` - Google OAuth client credentials
-- `APIkey.env` - OpenAI API key
-- `profile.txt` - Personal experience and project information
-- `resume-template.docx` - Word resume template
-
-These files are excluded from version control.
-
-## Run Locally
-
-Start the Streamlit dashboard:
+### 2. Frontend
 
 ```bash
-python -m streamlit run web_app.py --server.address 127.0.0.1
+cd frontend
+npm install
 ```
 
-Or run the complete pipeline:
+### 3. Private files
+
+Put keys and OAuth files in `secrets/`. That folder is git-ignored.
+
+| File | Purpose |
+|---|---|
+| `secrets/APIkey.env` | `OPENAI_API_KEY=...` |
+| `secrets/credentials.json` | Google OAuth client (Gmail read-only) |
+| `secrets/token.json` | Created on first Gmail sign-in |
+
+Personal files in the project root, also git-ignored:
+
+| File | Purpose |
+|---|---|
+| `Resume_<Name>.docx` | Master resume that chunks are selected from |
+| `resume-template.docx` | Word template for template-based drafts |
+| `profile_data.json` | Profile edited in the dashboard |
+| `profile.txt` | Legacy plain-text profile |
+
+## Run
+
+Start the local API and the dashboard in two terminals:
 
 ```bash
-python run_full_agent.py
+python api_local.py
 ```
-
-To view screened job opportunities:
 
 ```bash
-python run_screened_resumes.py --list
+cd frontend
+npm run dev
 ```
 
-To generate a resume for a selected job:
+Open http://localhost:3000.
+
+### Command line
 
 ```bash
-python run_screened_resumes.py --job-id JOB_ID
+python run_full_agent.py                    # import, read, screen
+python run_email_jobs.py --screen-only      # re-screen saved JDs only
+python run_screened_resumes.py --list       # list screened jobs
+python run_screened_resumes.py --job-id JOB_ID --chunk-tailored   # tailored draft (one OpenAI call)
+python chunk_v05_preview.py --job-id JOB_ID # offline chunk preview, no API call
 ```
 
-Replace `JOB_ID` with the target Handshake job ID.
+## Output folders (git-ignored)
 
-## Project Structure
+| Folder | Contents |
+|---|---|
+| `jobs/` | Imported links, raw and cleaned JDs, screening report |
+| `resumes/` | Generated resume drafts (.docx, .md, selection .json) |
+| `chunk_output/` | Offline chunk previews |
+| `browser_session/` | Playwright browser profile with your Handshake login |
 
-```text
-job-agent/
-├── web_app.py
-├── run_full_agent.py
-├── run_email_jobs.py
-├── run_screened_resumes.py
-├── gmail_reader.py
-├── handshake_email_import.py
-├── job_reader.py
-├── job_screen.py
-├── resume_writer.py
-├── resume_docx.py
-├── resume_editor.py
-├── requirements.txt
-├── README.md
-└── .gitignore
+## Tests
+
+From the project root (PowerShell):
+
+```powershell
+$env:PYTHONPATH = "."
+Get-ChildItem tests\test_*.py | ForEach-Object { python $_.FullName }
 ```
+
+## Cloud (not live)
+
+`cloud/` holds an optional Supabase + Google sign-in starter and database schema. It is not wired into the app yet. See [cloud/README_CLOUD_SETUP.md](cloud/README_CLOUD_SETUP.md).
 
 ## Security
 
-The repository excludes sensitive information, including:
+- `api_local.py` binds to `127.0.0.1` only. Never deploy it or expose its port.
+- `secrets/`, `browser_session/`, personal profiles, resumes and job data are git-ignored.
+- Gmail access uses the `gmail.readonly` scope.
 
-- OpenAI API keys
-- Gmail OAuth credentials and tokens
-- Browser login sessions
-- Personal profiles
-- Generated resumes and job data
+## Changelog
 
-The application is currently designed for local execution.
-
-## Deployment
-
-Cloud deployment requires additional infrastructure for:
-
-- Secure user authentication
-- Persistent data storage
-- Browser automation
-- OAuth credential management
-- Background job processing
+Resume chunking changes are described in [README_chunk-v0.5.md](README_chunk-v0.5.md). Superseded scripts are kept locally in `oldfolder/`, which is git-ignored.
 
 ## Disclaimer
 
-Job matching scores are heuristic estimates and do not represent hiring probabilities or immigration authorization decisions.
-
-The system does not automatically submit job applications. All generated resumes require human review.
+Match levels are heuristic estimates. They are not hiring probabilities or immigration authorization decisions. The system never submits applications.
