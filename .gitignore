@@ -10,9 +10,9 @@ credentials*.json
 client_secret*.json
 token*.json
 browser_session/
-jobs/
-results/
-resumes/
+/jobs/
+/results/
+/resumes/
 profile.txt
 resume_details.txt
 resume-template.docx
