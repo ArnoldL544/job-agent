@@ -137,7 +137,10 @@
 /* Home: closing soon */
 .closing-panel{margin-bottom:18px}
 .closing-list{display:flex;flex-direction:column;gap:6px;padding:0 23px 22px}
-.closing-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;text-align:left;background:#0e1a29;border:1px solid var(--line);border-radius:10px;padding:10px 13px;color:var(--text)}
+.content-grid{margin-bottom:18px}
+.closing-score{font-size:12px;color:#8ea3b8;white-space:nowrap}
+.closing-score strong{font-size:16px;font-weight:700;color:#3bdebd;margin-right:1px}
+.closing-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;text-align:left;background:#0e1a29;border:1px solid var(--line);border-radius:10px;padding:10px 13px;color:var(--text)}
 .closing-item:hover{border-color:#2c5b55}
 .closing-title{display:flex;flex-direction:column;gap:2px;min-width:0}
 .closing-title strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

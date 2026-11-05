@@ -30,28 +30,6 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, applied
     { label: "Resume drafts", value: local ? resumes.length : 0, icon: "file" as const, tone: "orange-bg" },
   ];
   return <>
-    <div className="product-quick-actions panel home-actions">
-      <div className="product-quick-copy"><h2>Ready for your next opportunity?</h2><p>Check Gmail for new Handshake jobs, then review the best matches.</p></div>
-      <div className="product-quick-buttons">
-        <button className="primary-button" onClick={onFindJobs}><Icon name="mail" size={17}/> Find new jobs</button>
-        <button className="secondary-button" onClick={onJobs}><Icon name="briefcase" size={17}/> Browse jobs</button>
-      </div>
-    </div>
-    {local && <section className="panel closing-panel">
-      <div className="panel-header"><div><div className="panel-title">Closing soon</div><div className="panel-subtitle">Open jobs with a deadline in the next 7 days</div></div></div>
-      {closing.length ? <div className="closing-list">{closing.map(job => {
-        const due = deadlineLabel(job);
-        const done = applied.includes(job.id);
-        return <div key={job.id} className={`closing-row ${done ? "is-applied" : ""}`}>
-          <AppliedCheck checked={done} onToggle={() => onToggleApplied(job.id)} title={job.title}/>
-          <button className="closing-item" onClick={() => onOpenJob(job.id)}>
-            {done ? <AppliedChip/> : <span className={`deadline-chip deadline-${due?.tone || "soon"}`}>{due?.text}</span>}
-            <span className="closing-title"><strong>{job.title}</strong><small>{job.company}</small></span>
-            <MatchTag status={job.match}/>
-          </button>
-        </div>;
-      })}</div> : <p className="stage4-muted">Nothing closes in the next 7 days.</p>}
-    </section>}
     <div className="metrics-grid">
       {metrics.map(m => <div className="metric-card" key={m.label}>
         <div className="metric-top"><span>{m.label}</span><span className={`metric-icon ${m.tone}`}><Icon name={m.icon} size={19}/></span></div>
@@ -70,6 +48,29 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, applied
           <span><strong>{r.jobTitle}</strong><small>{r.company} · {new Date(r.updatedAt).toLocaleDateString()}</small></span><Icon name="chevron" size={16}/>
         </button>)}</div> : <p className="stage4-muted">{local ? "No drafts yet. Open a job and choose Tailor resume." : "Drafts appear here in the local app."}</p>}
       </section>
+    </div>
+    {local && <section className="panel closing-panel">
+      <div className="panel-header"><div><div className="panel-title">Closing soon</div><div className="panel-subtitle">Open jobs with a deadline in the next 7 days</div></div></div>
+      {closing.length ? <div className="closing-list">{closing.map(job => {
+        const due = deadlineLabel(job);
+        const done = applied.includes(job.id);
+        return <div key={job.id} className={`closing-row ${done ? "is-applied" : ""}`}>
+          <AppliedCheck checked={done} onToggle={() => onToggleApplied(job.id)} title={job.title}/>
+          <button className="closing-item" onClick={() => onOpenJob(job.id)}>
+            {done ? <AppliedChip/> : <span className={`deadline-chip deadline-${due?.tone || "soon"}`}>{due?.text}</span>}
+            <span className="closing-title"><strong>{job.title}</strong><small>{job.company}</small></span>
+            <span className="closing-score" title="Match score"><strong>{job.score}</strong>/100</span>
+            <MatchTag status={job.match}/>
+          </button>
+        </div>;
+      })}</div> : <p className="stage4-muted">Nothing closes in the next 7 days.</p>}
+    </section>}
+    <div className="product-quick-actions panel home-actions">
+      <div className="product-quick-copy"><h2>Ready for your next opportunity?</h2><p>Check Gmail for new Handshake jobs, then review the best matches.</p></div>
+      <div className="product-quick-buttons">
+        <button className="primary-button" onClick={onFindJobs}><Icon name="mail" size={17}/> Find new jobs</button>
+        <button className="secondary-button" onClick={onJobs}><Icon name="briefcase" size={17}/> Browse jobs</button>
+      </div>
     </div>
   </>;
 }
