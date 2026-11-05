@@ -139,31 +139,11 @@ export default function ProfileEditor({ dataMode }: { dataMode: "local" | "demo"
   }
 
   return <div className="product-profile-workspace">
-    <section className="panel product-profile-connection" aria-labelledby="profile-account-heading">
-      <div className="product-profile-connection-head">
-        <div>
-          <span className="product-small-heading">ACCOUNT & INTEGRATIONS</span>
-          <h3 id="profile-account-heading">Google account & Gmail</h3>
-          <p>Signing in and granting email access are separate permissions. Connect them when secure cloud authentication is ready.</p>
-        </div>
-        <span className="neutral-chip">CLOUD SETUP PENDING</span>
-      </div>
-      <div className="product-connection-steps" aria-label="Planned onboarding steps">
-        <div className="product-connection-step"><span>01</span><div><strong>Sign in with Google</strong><small>Identity only</small></div></div>
-        <div className="product-connection-step"><span>02</span><div><strong>Connect Gmail</strong><small>Separate email permission</small></div></div>
-        <div className="product-connection-step"><span>03</span><div><strong>Complete profile</strong><small>Career details and skills</small></div></div>
-      </div>
-      <div className="product-quick-buttons">
-        <button type="button" className="secondary-button" disabled title="Cloud Google login is not implemented yet">Google sign-in · Coming soon</button>
-        <button type="button" className="secondary-button" disabled title="Requires secure Gmail OAuth setup">Connect Gmail · Coming soon</button>
-      </div>
-    </section>
-
     <div className={`product-profile-status ${local ? "is-local" : "is-demo"}`} role="status">
       <span className="product-status-dot" aria-hidden="true" />
       <div>
-        <strong>{local ? "Your data stays on this computer" : "Read-only demo mode"}</strong>
-        <p>{local ? "Profile entries are saved in profile_data.json. This is separate from the older profile.txt used by the resume generator." : "The public demo does not accept or save personal information."}</p>
+        <strong>{local ? "Where this profile is used" : "Read-only demo mode"}</strong>
+        <p>{local ? "Tailored drafts are written from your master resume (Resume_<Name>.docx). This profile is used only when you choose “Write from: My Profile page” on the Resumes page. Saved locally in profile_data.json." : "The public demo does not accept or save personal information."}</p>
       </div>
     </div>
 

@@ -394,6 +394,52 @@ def safe_read_text(path: Path, limit: int) -> str:
     return path.read_text(encoding="utf-8-sig", errors="replace")
 
 
+def draft_kind(path: Path) -> str:
+    if path.name.endswith("_chunk_tailored.docx"):
+        return "tailored"
+    return "uploaded" if "_manual_" in path.name else "profile"
+
+
+def draft_summary(docx: Path) -> dict | None:
+    """Readable review data for a chunk-tailored draft (from its selection JSON).
+
+    Returns None for other drafts; the raw text preview is still available.
+    """
+    selection = docx.with_suffix(".selection.json")
+    if not selection.is_file() or selection.stat().st_size > 2_000_000:
+        return None
+    try:
+        data = json.loads(selection.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    source = {str(b.get("id")): str(b.get("text", ""))
+              for e in data.get("entries", []) if isinstance(e, dict)
+              for b in e.get("bullets", []) if isinstance(b, dict)}
+    titles = {str(e.get("id")): str(e.get("title", "")) for e in data.get("entries", []) if isinstance(e, dict)}
+    writer = data.get("writer_v06") if isinstance(data.get("writer_v06"), dict) else {}
+    changes = []
+    for row in data.get("composition_v04", []):
+        if not isinstance(row, dict) or row.get("status") not in ("rewritten", "merged"):
+            continue
+        changes.append({"section": titles.get(str(row.get("entry_id")), "")[:160],
+                        "kind": row["status"],
+                        "before": [source.get(str(b), "")[:600] for b in row.get("source_ids", [])][:2],
+                        "after": str(row.get("text", ""))[:900]})
+    questions = [{"question": str(q.get("question", ""))[:300], "bullet": source.get(str(q.get("bullet_id")), "")[:600]}
+                 for q in writer.get("fact_questions", []) if isinstance(q, dict)][:5]
+    page = data.get("page_fit_v05") if isinstance(data.get("page_fit_v05"), dict) else {}
+    check = page.get("render_check") if isinstance(page.get("render_check"), dict) else {}
+    return {"model": str(writer.get("model", ""))[:60],
+            "focus": [str(x)[:160] for x in writer.get("jd_focus", [])][:5],
+            "questions": questions,
+            "changes": changes[:20],
+            "skills": [str(v)[:300] for v in (writer.get("skills_reordered") or {}).values()][:6],
+            "bulletCount": len(data.get("selected_bullet_ids", [])),
+            "pageCount": check.get("pages")}
+
+
 def resume_entries() -> list[dict]:
     rows = merged_jobs()
     entries = []
@@ -404,7 +450,7 @@ def resume_entries() -> list[dict]:
                             "company": str(row.get("company") or "Unknown company")[:180],
                             "jobTitle": str(row.get("title") or "Untitled position")[:200],
                             "filename": path.name, "updatedAt": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
-                            "kind": "tailored" if path.name.endswith("_chunk_tailored.docx") else "profile",
+                            "kind": draft_kind(path),
                             "hasTextPreview": md.is_file()})
     entries.sort(key=lambda item: item["updatedAt"], reverse=True)
     return entries
@@ -612,7 +658,8 @@ class Handler(BaseHTTPRequestHandler):
                     source = "docx-text"
                 except Exception:
                     preview, source = "Text preview unavailable. Download the Word file to review.", "unavailable"
-            return self.send_json({"jobId": jid, "filename": docx.name, "source": source, "text": preview})
+            return self.send_json({"jobId": jid, "filename": docx.name, "source": source, "text": preview,
+                                   "summary": draft_summary(docx)})
         return self.send_json({"error": "Not found"}, 404)
 
     def do_POST(self) -> None:

@@ -58,7 +58,7 @@ export function ApplicationTracker({jobId, enabled}:{jobId:string; enabled:boole
   </section>;
 }
 
-export function DeadlineOverview({enabled, onViewJobs}:{enabled:boolean; onViewJobs:()=>void}) {
+export function DeadlineOverview({enabled}:{enabled:boolean}) {
   const [all, setAll] = useState<Applications>({});
   const [error, setError] = useState("");
   // Updated only after an effect fetch completes; never read the clock while rendering.
@@ -92,45 +92,11 @@ export function DeadlineOverview({enabled, onViewJobs}:{enabled:boolean; onViewJ
   if(!enabled) return null;
   const open = due.filter(x=>x.days>=0);
   return <section className="panel ja-extra-card ja-deadlines">
-    <div className="ja-extra-heading"><h3>Deadlines & applications</h3><button className="secondary-button" onClick={onViewJobs}>Browse Jobs</button></div>
+    <div className="ja-extra-heading"><h3>Deadlines & applications</h3></div>
     <p className="ja-extra-caption">{Object.values(all).filter(x=>x.status!=="Discovered").length} tracked applications · {open.length} approaching in 7 days</p>
     {error && <p className="ja-extra-error">{error}</p>}
     {due.length===0?<p className="ja-extra-caption">No upcoming deadlines entered. Open a job to set one.</p>:
       <div className="ja-deadline-list">{due.slice(0,6).map(x=><div key={x.jobId}><strong>Job {x.jobId}</strong><span className={x.days<0?"ja-extra-error":""}>{x.days<0?`Overdue ${Math.abs(x.days)}d`:x.days===0?"Due today":`Due in ${x.days}d`} · {x.deadline}</span></div>)}</div>}
-  </section>;
-}
-
-export function ResumeUploader({enabled, jobs, onUploaded}:{enabled:boolean;jobs:{id:string;title:string;company:string}[];onUploaded:()=>void}) {
-  const [jobId,setJobId] = useState("");
-  const [file,setFile] = useState<File|null>(null);
-  const [error,setError]=useState("");
-  const [message,setMessage]=useState("");
-  const [busy,setBusy]=useState(false);
-  if(!enabled)return null;
-  async function upload(){
-    if(!file)return;
-    if(!file.name.toLowerCase().endsWith(".docx") || file.size>15_000_000){setError("Choose a .docx smaller than 15 MB");return;}
-    setBusy(true);setError("");setMessage("");
-    try{
-      const id=jobId||jobs[0]?.id;
-      if(!id)throw new Error("Select a job first");
-      const res=await fetch(`${API}/api/resumes/${id}/upload`,{method:"POST",headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.wordprocessingml.document","X-Job-Agent-Action":"local-user-approved"},body:file});
-      const data=await res.json() as {error?:string;filename?:string};
-      if(!res.ok)throw new Error(data.error || `Upload HTTP ${res.status}`);
-      setMessage(`Version saved: ${data.filename}`);setFile(null);onUploaded();
-    }catch(e){setError(e instanceof Error?e.message:"Upload failed");}
-    finally{setBusy(false);}
-  }
-  return <section className="panel ja-extra-card">
-    <div className="ja-extra-heading"><h3>Upload an edited Word version</h3><span className="ja-extra-caption">Each upload is saved as a separate version</span></div>
-    <p className="ja-extra-caption">Edit the downloaded .docx in Word and upload it here. The original file stays unchanged.</p>
-    <div className="ja-extra-grid">
-      <label>Target job<select value={jobId||jobs[0]?.id||""} onChange={e=>setJobId(e.target.value)}>{jobs.map(j=><option key={j.id} value={j.id}>{j.company} — {j.title}</option>)}</select></label>
-      <label>Revised document<input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={e=>setFile(e.target.files?.[0] || null)}/></label>
-    </div>
-    {error&&<p className="ja-extra-error" role="alert">{error}</p>}
-    {message&&<p className="ja-extra-success" role="status">{message}</p>}
-    <button className="secondary-button" disabled={!file||busy||!jobs.length} onClick={upload}>{busy?"Uploading...":"Save new Word version"}</button>
   </section>;
 }
 

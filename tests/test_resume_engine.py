@@ -101,6 +101,28 @@ class ResumeEngineTests(unittest.TestCase):
         self.assertTrue(entries[0]['hasTextPreview'])
         self.assertTrue(all(p.suffix == '.docx' for p in api.resumes_for('12345')))
 
+    def test_draft_summary_for_review_page(self):
+        docx = api.RESUMES / '12345_20261104_121212_000002_chunk_tailored.docx'
+        docx.write_bytes(b'PK\x03\x04FAKE')
+        docx.with_suffix('.selection.json').write_text(json.dumps({
+            'entries': [{'id': 'e1', 'title': 'Amazon China', 'bullets': [
+                {'id': 'b1', 'text': 'Processed 7.8 million ratings.'}, {'id': 'b2', 'text': 'Benchmarked four models.'}]}],
+            'selected_bullet_ids': ['b1', 'b2'],
+            'writer_v06': {'model': 'gpt-5.4', 'jd_focus': ['data analysis'],
+                           'fact_questions': [{'bullet_id': 'b2', 'question': 'Which metric improved?'}],
+                           'skills_reordered': {'58': 'Programming Languages: Python, C'}},
+            'composition_v04': [{'entry_id': 'e1', 'source_ids': ['b1'], 'status': 'rewritten', 'text': 'Filtered 7.8 million ratings.'},
+                                {'entry_id': 'e1', 'source_ids': ['b2'], 'status': 'unchanged', 'text': 'Benchmarked four models.'}],
+            'page_fit_v05': {'render_check': {'pages': 1}}}), encoding='utf-8')
+        summary = api.draft_summary(docx)
+        self.assertEqual(summary['focus'], ['data analysis'])
+        self.assertEqual(summary['questions'], [{'question': 'Which metric improved?', 'bullet': 'Benchmarked four models.'}])
+        self.assertEqual(summary['changes'], [{'section': 'Amazon China', 'kind': 'rewritten',
+                                               'before': ['Processed 7.8 million ratings.'], 'after': 'Filtered 7.8 million ratings.'}])
+        self.assertEqual(summary['pageCount'], 1)
+        self.assertEqual(api.draft_kind(api.RESUMES / '12345_manual_x_resume_draft.docx'), 'uploaded')
+        self.assertIsNone(api.draft_summary(api.RESUMES / '12345_old_resume_draft.docx'))
+
 
 if __name__ == '__main__':
     unittest.main()
