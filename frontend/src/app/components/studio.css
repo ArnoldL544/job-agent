@@ -91,6 +91,23 @@
 .save-message{margin:0;font-size:12px;color:#75eed3;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;overflow-wrap:anywhere;text-align:right}
 @media(max-width:900px){.save-controls{align-items:stretch;width:100%}.save-row{justify-content:flex-start}.save-folder{flex:1}.save-folder input{width:100%;max-width:none}}
 
+/* Applied: checkbox on Home, dimmed everywhere */
+.applied-check{position:relative;display:inline-grid;place-items:center;width:22px;height:22px;flex-shrink:0;cursor:pointer}
+.applied-check input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.applied-check span{width:20px;height:20px;border-radius:6px;border:1.5px solid #4a6178;background:#0c1827;color:transparent;display:grid;place-items:center;transition:background .15s,border-color .15s}
+.applied-check:hover span{border-color:#3bdebd}
+.applied-check input:focus-visible+span{box-shadow:0 0 0 3px #4ce0bf44}
+.applied-check input:checked+span{background:#3bdebd;border-color:#3bdebd;color:#062a24}
+.applied-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;color:#7ce0c6;background:rgba(51,194,153,.12);border:1px solid rgba(57,201,158,.3);white-space:nowrap}
+.is-applied .company-mark,.is-applied .job-row-main,.is-applied .job-row-score,.is-applied .job-row-status,.is-applied .closing-item,
+.studio-item-wrap.is-applied .studio-item,.home-draft.is-applied{opacity:.48;transition:opacity .15s}
+.is-applied:hover .company-mark,.is-applied:hover .job-row-main,.is-applied:hover .job-row-score,.is-applied:hover .job-row-status,.is-applied:hover .closing-item,
+.studio-item-wrap.is-applied:hover .studio-item,.home-draft.is-applied:hover{opacity:.8}
+.is-applied .applied-chip{opacity:1}
+.closing-row{display:flex;align-items:center;gap:12px}
+.closing-row .closing-item{flex:1;min-width:0}
+.detail-applied{margin:12px 0 0;padding:10px 13px;border-radius:9px;background:rgba(59,222,189,.07);border:1px solid rgba(59,222,189,.25);color:#bff3e6;font-size:13px;line-height:1.55}
+
 /* Job posting links */
 .posting-icon{flex-shrink:0;color:#8da3b6}
 .posting-icon:hover{color:#3bdebd;border-color:#2c5b55}

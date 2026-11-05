@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { ApplicationTracker } from "../AgentExtras";
-import { CompanyMark, DataMode, deadlineLabel, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag, PostingLink } from "../../lib/shared";
+import { AppliedChip, CompanyMark, DataMode, deadlineLabel, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag, PostingLink } from "../../lib/shared";
 
 type Props = {
-  dataMode: DataMode; job: Job; others: Job[]; saved: boolean;
+  dataMode: DataMode; job: Job; others: Job[]; saved: boolean; applied: boolean;
   onBack: () => void; onSelect: (id: string) => void; onToggleSave: () => void; onTailor: () => void;
 };
 type Loaded = { id: string; detail: JobDetail | null; error: string };
 
-export default function JobDetailPage({ dataMode, job, others, saved, onBack, onSelect, onToggleSave, onTailor }: Props) {
+export default function JobDetailPage({ dataMode, job, others, saved, applied, onBack, onSelect, onToggleSave, onTailor }: Props) {
   const local = dataMode === "local";
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   useEffect(() => {
@@ -41,8 +41,9 @@ export default function JobDetailPage({ dataMode, job, others, saved, onBack, on
         <div className="detail-header"><CompanyMark job={job} size="large"/><div className="detail-header-main">
           <div className="job-row-company">{job.company} · {job.id}</div><h2>{job.title}</h2>{facts.length === 0 && <JobMeta job={job} size={15}/>}
         </div></div>
-        <div className="detail-badges"><MatchTag status={job.match}/>{job.priority && <span className="skill-pill">{job.priority}</span>}</div>
-        {job.reason && <p className="detail-reason">{job.reason}</p>}
+        <div className="detail-badges">{applied && <AppliedChip/>}<MatchTag status={job.match}/>{job.priority && <span className="skill-pill">{job.priority}</span>}</div>
+        {applied && <p className="detail-applied">You marked this job as applied. Change it under Application status, or untick it on Home.</p>}
+        {job.reason && !applied && <p className="detail-reason">{job.reason}</p>}
         <dl className="detail-facts">
           {facts.map(([label, value, tone]) => <div key={label}><dt>{label}</dt><dd className={tone ? `deadline-${tone}` : ""}>{value}</dd></div>)}
         </dl>

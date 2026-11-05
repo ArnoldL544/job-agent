@@ -67,6 +67,21 @@ export function Icon({ name, size = 18, className = "" }: { name: IconName; size
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{glyphs[name]}</svg>;
 }
 
+// Tracker statuses that mean the user already applied.
+const APPLIED_STATUSES = new Set(["Applied", "Interview", "Offer", "Rejected", "Withdrawn"]);
+export function isApplied(status?: string) { return !!status && APPLIED_STATUSES.has(status); }
+
+export function AppliedCheck({ checked, onToggle, title }: { checked: boolean; onToggle: () => void; title: string }) {
+  return <label className="applied-check" title={checked ? "Applied: click to undo" : "Mark as applied"}>
+    <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`${checked ? "Unmark" : "Mark"} ${title} as applied`}/>
+    <span aria-hidden="true"><Icon name="check" size={13}/></span>
+  </label>;
+}
+
+export function AppliedChip() {
+  return <span className="applied-chip"><Icon name="check" size={12}/> Applied</span>;
+}
+
 const TAG_CLASS: Record<Match, string> = { "High Match": "tag-high", "Review": "tag-review", "Verify Eligibility": "tag-verify", "Conflict": "tag-conflict" };
 export function MatchTag({ status }: { status: Match }) {
   return <span className={`match-tag ${TAG_CLASS[status]}`}><span className="tag-dot"/>{status}</span>;
@@ -105,24 +120,28 @@ export function JobMeta({ job, size = 13 }: { job: Job; size?: number }) {
   return <div className="job-row-meta"><Icon name="pin" size={size}/>{parts.join(" · ")}</div>;
 }
 
-export function JobFacts({ job }: { job: Job }) {
+export function JobFacts({ job, applied = false }: { job: Job; applied?: boolean }) {
   const due = deadlineLabel(job);
-  if (!due && !job.workAuth && !job.reason) return null;
+  if (!due && !job.workAuth && !job.reason && !applied) return null;
   return <div className="job-facts">
+    {applied && <AppliedChip/>}
     {due && <span className={`deadline-chip ${due.tone ? `deadline-${due.tone}` : ""}`}>{due.text}</span>}
     {job.workAuth && <span className="job-auth">{job.workAuth}</span>}
     {job.reason && <span className="job-reason" title={job.reason}>{job.reason}</span>}
   </div>;
 }
 
-export function JobRow({ job, saved, onOpen, onSave }: { job: Job; saved: boolean; onOpen: () => void; onSave: () => void }) {
-  return <div className="job-row">
+export function JobRow({ job, saved, onOpen, onSave, applied = false, onToggleApplied }: {
+  job: Job; saved: boolean; onOpen: () => void; onSave: () => void; applied?: boolean; onToggleApplied?: () => void;
+}) {
+  return <div className={`job-row ${applied ? "is-applied" : ""}`}>
+    {onToggleApplied && <AppliedCheck checked={applied} onToggle={onToggleApplied} title={job.title}/>}
     <CompanyMark job={job}/>
     <div className="job-row-main">
       <div className="job-row-company">{job.company}</div>
       <button className="job-title-link" onClick={onOpen}>{job.title}<Icon name="chevron" size={15}/></button>
       <JobMeta job={job}/>
-      <JobFacts job={job}/>
+      <JobFacts job={job} applied={applied}/>
     </div>
     <div className="job-row-score"><div className="tiny-label">MATCH SCORE</div><Score score={job.score}/></div>
     <div className="job-row-status"><MatchTag status={job.match}/></div>

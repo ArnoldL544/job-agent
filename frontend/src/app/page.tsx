@@ -9,7 +9,7 @@ import JobsPage from "./components/pages/JobsPage";
 import MasterResumePage from "./components/pages/MasterResumePage";
 import ResumesPage from "./components/pages/ResumesPage";
 import "./components/studio.css";
-import { ACTION_HEADERS, DataMode, Icon, Job, LOCAL_API, LocalTask, Page, ResumeRecord } from "./lib/shared";
+import { ACTION_HEADERS, DataMode, Icon, isApplied, Job, LOCAL_API, LocalTask, Page, ResumeRecord } from "./lib/shared";
 
 type JobsApiResponse = { jobs: Job[]; count: number };
 type ResumeApiResponse = { count: number; resumes: ResumeRecord[] };
@@ -54,6 +54,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState("SAMPLE-001");
   const [draftJobId, setDraftJobId] = useState("");
   const [shortlisted, setShortlisted] = useState<string[]>(["SAMPLE-001", "SAMPLE-002"]);
+  const [applied, setApplied] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const loadedLocal = useRef(false);
 
@@ -80,8 +81,13 @@ export default function Home() {
     if (dataMode !== "local") return;
     let mounted = true;
     const update = () => fetch(`${LOCAL_API}/api/tracker`, { cache: "no-store" })
-      .then(res => res.ok ? res.json() as Promise<{ applications: Record<string, { saved?: boolean; jobId?: string }> }> : Promise.reject())
-      .then(data => { if (mounted) setShortlisted(Object.values(data.applications || {}).filter(x => x.saved).map(x => String(x.jobId || ""))); })
+      .then(res => res.ok ? res.json() as Promise<{ applications: Record<string, { saved?: boolean; jobId?: string; status?: string }> }> : Promise.reject())
+      .then(data => {
+        if (!mounted) return;
+        const rows = Object.values(data.applications || {});
+        setShortlisted(rows.filter(x => x.saved).map(x => String(x.jobId || "")));
+        setApplied(rows.filter(x => isApplied(x.status)).map(x => String(x.jobId || "")));
+      })
       .catch(() => {});
     void update(); window.addEventListener("job-agent-tracker-updated", update);
     return () => { mounted = false; window.removeEventListener("job-agent-tracker-updated", update); };
@@ -142,6 +148,16 @@ export default function Home() {
       .then(res => { if (!res.ok) throw new Error(); window.dispatchEvent(new Event("job-agent-tracker-updated")); })
       .catch(() => setShortlisted(prev => saved ? prev.filter(x => x !== id) : [...prev, id]));
   }
+  // Checked on Home = tracker status "Applied"; unchecked = back to "Discovered".
+  // Stored in the same tracker as the job page's Application status, so both agree.
+  function toggleApplied(id: string) {
+    const nowApplied = !applied.includes(id);
+    setApplied(prev => nowApplied ? [...prev.filter(x => x !== id), id] : prev.filter(x => x !== id));
+    if (!local) return;
+    fetch(`${LOCAL_API}/api/tracker`, { method: "POST", headers: ACTION_HEADERS, body: JSON.stringify({ jobId: id, status: nowApplied ? "Applied" : "Discovered" }) })
+      .then(res => { if (!res.ok) throw new Error(); window.dispatchEvent(new Event("job-agent-tracker-updated")); })
+      .catch(() => setApplied(prev => nowApplied ? prev.filter(x => x !== id) : [...prev, id]));
+  }
   const selected = jobs.find(j => j.id === selectedId) ?? jobs[0];
   const activeMenu = page === "details" ? "opportunities" : page === "profile" ? "master" : page;
   const hero = TITLES[page];
@@ -161,14 +177,15 @@ export default function Home() {
         <div className="page-heading"><div><h1>{hero.title}<span className="title-accent">.</span></h1><p>{hero.subtitle}</p></div></div>
         {!local && <div className="demo-notice"><Icon name="info" size={18}/><span><strong>Sample data.</strong> The local API is not running, so the companies and scores shown are fictional. Start the app with start.bat to see your own jobs.</span></div>}
 
-        {page === "overview" && <HomePage dataMode={dataMode} jobs={jobs} resumes={resumes} shortlisted={shortlisted}
+        {page === "overview" && <HomePage dataMode={dataMode} jobs={jobs} resumes={resumes} shortlisted={shortlisted} applied={applied}
           onFindJobs={() => navigate("find")} onJobs={() => navigate("opportunities")} onOpenJob={openJob}
-          onToggleSave={toggleSave} onOpenDrafts={openResumes}/>}
+          onToggleSave={toggleSave} onToggleApplied={toggleApplied} onOpenDrafts={openResumes}/>}
         {page === "find" && <FindJobsPage dataMode={dataMode} task={task} taskError={taskError} taskBusy={taskBusy} startTask={startTask} onTaskDone={() => setRefresh(v => v + 1)}/>}
-        {page === "opportunities" && <JobsPage dataMode={dataMode} jobs={jobs} shortlisted={shortlisted} onOpenJob={openJob} onToggleSave={toggleSave}/>}
+        {page === "opportunities" && <JobsPage dataMode={dataMode} jobs={jobs} shortlisted={shortlisted} applied={applied} onOpenJob={openJob} onToggleSave={toggleSave}/>}
         {page === "details" && <JobDetailPage dataMode={dataMode} job={selected} others={jobs.filter(j => j.id !== selected.id)} saved={shortlisted.includes(selected.id)}
+          applied={applied.includes(selected.id)}
           onBack={() => navigate("opportunities")} onSelect={setSelectedId} onToggleSave={() => toggleSave(selected.id)} onTailor={() => openResumes(selected.id)}/>}
-        {page === "resumes" && <ResumesPage dataMode={dataMode} jobs={jobs} resumes={resumes} resumesError={resumesError}
+        {page === "resumes" && <ResumesPage dataMode={dataMode} jobs={jobs} resumes={resumes} resumesError={resumesError} applied={applied}
           draftJobId={draftJobId} setDraftJobId={setDraftJobId} task={task} taskError={taskError} taskBusy={taskBusy}
           startTask={startTask} onRefresh={() => setRefresh(v => v + 1)}/>}
         {page === "master" && <MasterResumePage dataMode={dataMode} onOpenProfileForm={() => navigate("profile")}/>}

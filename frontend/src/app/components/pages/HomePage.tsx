@@ -1,20 +1,22 @@
 "use client";
 
-import { DataMode, deadlineLabel, Icon, Job, JobRow, MatchTag, ResumeRecord } from "../../lib/shared";
+import { AppliedCheck, AppliedChip, DataMode, deadlineLabel, Icon, Job, JobRow, MatchTag, ResumeRecord } from "../../lib/shared";
 
 type Props = {
-  dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; shortlisted: string[];
+  dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; shortlisted: string[]; applied: string[];
   onFindJobs: () => void; onJobs: () => void; onOpenJob: (id: string) => void;
-  onToggleSave: (id: string) => void; onOpenDrafts: (jobId: string) => void;
+  onToggleSave: (id: string) => void; onToggleApplied: (id: string) => void; onOpenDrafts: (jobId: string) => void;
 };
 
-export default function HomePage({ dataMode, jobs, resumes, shortlisted, onFindJobs, onJobs, onOpenJob, onToggleSave, onOpenDrafts }: Props) {
+export default function HomePage({ dataMode, jobs, resumes, shortlisted, applied, onFindJobs, onJobs, onOpenJob, onToggleSave, onToggleApplied, onOpenDrafts }: Props) {
   const local = dataMode === "local";
   const best = [...jobs].sort((a, b) => b.score - a.score).slice(0, 3);
   const highCount = jobs.filter(j => j.match === "High Match").length;
   const closing = jobs
     .filter(j => j.deadlineDays !== null && j.deadlineDays !== undefined && j.deadlineDays >= 0 && j.deadlineDays <= 7 && j.match !== "Conflict")
-    .sort((a, b) => (a.deadlineDays ?? 0) - (b.deadlineDays ?? 0) || b.score - a.score);
+    // Applied jobs stay visible (checked, dimmed) but move to the bottom.
+    .sort((a, b) => Number(applied.includes(a.id)) - Number(applied.includes(b.id))
+      || (a.deadlineDays ?? 0) - (b.deadlineDays ?? 0) || b.score - a.score);
   // Latest draft per job, newest first.
   const latest: ResumeRecord[] = [];
   for (const r of [...resumes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))) {
@@ -39,11 +41,15 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, onFindJ
       <div className="panel-header"><div><div className="panel-title">Closing soon</div><div className="panel-subtitle">Open jobs with a deadline in the next 7 days</div></div></div>
       {closing.length ? <div className="closing-list">{closing.map(job => {
         const due = deadlineLabel(job);
-        return <button key={job.id} className="closing-item" onClick={() => onOpenJob(job.id)}>
-          <span className={`deadline-chip deadline-${due?.tone || "soon"}`}>{due?.text}</span>
-          <span className="closing-title"><strong>{job.title}</strong><small>{job.company}</small></span>
-          <MatchTag status={job.match}/>
-        </button>;
+        const done = applied.includes(job.id);
+        return <div key={job.id} className={`closing-row ${done ? "is-applied" : ""}`}>
+          <AppliedCheck checked={done} onToggle={() => onToggleApplied(job.id)} title={job.title}/>
+          <button className="closing-item" onClick={() => onOpenJob(job.id)}>
+            {done ? <AppliedChip/> : <span className={`deadline-chip deadline-${due?.tone || "soon"}`}>{due?.text}</span>}
+            <span className="closing-title"><strong>{job.title}</strong><small>{job.company}</small></span>
+            <MatchTag status={job.match}/>
+          </button>
+        </div>;
       })}</div> : <p className="stage4-muted">Nothing closes in the next 7 days.</p>}
     </section>}
     <div className="metrics-grid">
@@ -55,11 +61,12 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, onFindJ
     <div className="content-grid">
       <section className="panel featured-panel">
         <div className="panel-header"><div><div className="panel-title">Top matches</div><div className="panel-subtitle">Highest screening scores</div></div><button className="quiet-link" onClick={onJobs}>All jobs <Icon name="arrow" size={15}/></button></div>
-        <div className="job-list">{best.map(job => <JobRow key={job.id} job={job} saved={shortlisted.includes(job.id)} onOpen={() => onOpenJob(job.id)} onSave={() => onToggleSave(job.id)}/>)}</div>
+        <div className="job-list">{best.map(job => <JobRow key={job.id} job={job} saved={shortlisted.includes(job.id)} onOpen={() => onOpenJob(job.id)} onSave={() => onToggleSave(job.id)}
+          applied={applied.includes(job.id)} onToggleApplied={local ? () => onToggleApplied(job.id) : undefined}/>)}</div>
       </section>
       <section className="panel snapshot-panel">
         <div className="panel-header"><div><div className="panel-title">Latest resume drafts</div><div className="panel-subtitle">Most recent draft per job</div></div></div>
-        {latest.length ? <div className="home-drafts">{latest.map(r => <button key={r.id} className="home-draft" onClick={() => onOpenDrafts(r.jobId)}>
+        {latest.length ? <div className="home-drafts">{latest.map(r => <button key={r.id} className={`home-draft ${applied.includes(r.jobId) ? "is-applied" : ""}`} onClick={() => onOpenDrafts(r.jobId)}>
           <span><strong>{r.jobTitle}</strong><small>{r.company} · {new Date(r.updatedAt).toLocaleDateString()}</small></span><Icon name="chevron" size={16}/>
         </button>)}</div> : <p className="stage4-muted">{local ? "No drafts yet. Open a job and choose Tailor resume." : "Drafts appear here in the local app."}</p>}
       </section>

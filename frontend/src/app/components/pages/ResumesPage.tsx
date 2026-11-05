@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ACTION_HEADERS, DataMode, DraftKind, Icon, Job, LOCAL_API, LocalTask, PostingLink, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
 
 type Props = {
-  dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; resumesError: string;
+  dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; resumesError: string; applied: string[];
   draftJobId: string; setDraftJobId: (id: string) => void;
   task: LocalTask | null; taskError: string; taskBusy: boolean; startTask: StartTask; onRefresh: () => void;
 };
@@ -25,7 +25,7 @@ function groupDrafts(resumes: ResumeRecord[]): Group[] {
 }
 
 export default function ResumesPage(props: Props) {
-  const { dataMode, jobs, resumes, resumesError, draftJobId, setDraftJobId, task, taskError, taskBusy, startTask, onRefresh } = props;
+  const { dataMode, jobs, resumes, resumesError, applied, draftJobId, setDraftJobId, task, taskError, taskBusy, startTask, onRefresh } = props;
   const [engine, setEngine] = useState<"chunk" | "profile">("chunk");
   const [profileSource, setProfileSource] = useState<"json" | "legacy">("json");
   const [allowRisk, setAllowRisk] = useState(false);
@@ -66,7 +66,7 @@ export default function ResumesPage(props: Props) {
       <div className="panel-title">Tailor a resume</div>
       <label className="stage5-field">Job
         <select value={targetId} onChange={e => { setDraftJobId(e.target.value); setConfirmPaid(false); setAllowRisk(false); }}>
-          {jobs.map(job => <option key={job.id} value={job.id}>{job.company} — {job.title} ({job.score}/100)</option>)}
+          {jobs.map(job => <option key={job.id} value={job.id}>{applied.includes(job.id) ? "✓ Applied · " : ""}{job.company} — {job.title} ({job.score}/100)</option>)}
         </select>
       </label>
       <p className="stage4-muted">{engine === "chunk"
@@ -96,11 +96,12 @@ export default function ResumesPage(props: Props) {
           {groups.map(g => {
             const job = jobs.find(j => j.id === g.jobId);
             // A link cannot sit inside the <button>, so it is a sibling placed over the item's corner.
-            return <div key={g.jobId} className="studio-item-wrap">
+            const done = applied.includes(g.jobId);
+            return <div key={g.jobId} className={`studio-item-wrap ${done ? "is-applied" : ""}`}>
               <button className={`studio-item ${g.jobId === group.jobId ? "active" : ""} ${job?.url ? "has-apply" : ""}`} onClick={() => { setActiveJob(g.jobId); setActiveVersion(""); }}>
                 <strong>{g.title}</strong>
                 <span>{g.company}</span>
-                <small>{g.versions.length} version{g.versions.length > 1 ? "s" : ""} · {new Date(g.versions[0].updatedAt).toLocaleDateString()}</small>
+                <small>{done ? "Applied · " : ""}{g.versions.length} version{g.versions.length > 1 ? "s" : ""} · {new Date(g.versions[0].updatedAt).toLocaleDateString()}</small>
               </button>
               {job && <PostingLink job={job}/>}
             </div>;
