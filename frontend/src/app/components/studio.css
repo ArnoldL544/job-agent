@@ -75,6 +75,18 @@
 .detail-facts dt{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:#7d92a7;margin-bottom:4px}
 .detail-facts dd{margin:0;font-size:13px;color:#e3edf8;line-height:1.45;overflow-wrap:anywhere}
 
+/* Save-to folder next to the download button */
+.save-controls{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%}
+.save-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:100%}
+.save-folder{display:flex;align-items:center;gap:8px;background:#0c1827;border:1px solid rgba(146,177,204,.25);border-radius:10px;padding:0 4px 0 11px;min-width:0}
+.save-folder:focus-within{border-color:#4ce0bf;box-shadow:0 0 0 2px #4ce0bf22}
+.save-folder span{font-size:11.5px;color:#7d92a7;white-space:nowrap}
+.save-folder input{width:300px;max-width:42vw;min-width:0;background:transparent;border:0;outline:none;color:#eaf3fc;font-size:12.5px;padding:10px 6px}
+.save-folder input::placeholder{color:#6d8196}
+.save-row .secondary-button,.save-row .primary-button{white-space:nowrap}
+.save-message{margin:0;font-size:12px;color:#75eed3;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;overflow-wrap:anywhere;text-align:right}
+@media(max-width:900px){.save-controls{align-items:stretch;width:100%}.save-row{justify-content:flex-start}.save-folder{flex:1}.save-folder input{width:100%;max-width:none}}
+
 /* Job posting links */
 .posting-icon{flex-shrink:0;color:#8da3b6}
 .posting-icon:hover{color:#3bdebd;border-color:#2c5b55}

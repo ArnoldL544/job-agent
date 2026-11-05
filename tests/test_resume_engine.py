@@ -2,6 +2,7 @@
 from __future__ import annotations
 import importlib.util
 import json
+import shutil
 import tempfile
 import threading
 import time
@@ -166,6 +167,43 @@ class ResumeEngineTests(unittest.TestCase):
         self.assertIn("filename*=UTF-8''SWE%20Intern_resume.docx", disposition)
         entry = next(e for e in api.resume_entries() if e['filename'] == docx.name)
         self.assertEqual(entry['downloadName'], 'SWE Intern_resume.docx')
+
+    def test_save_folder_and_save_copy(self):
+        target = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, target, ignore_errors=True)
+        self.addCleanup(lambda: api.settings_file().unlink(missing_ok=True))
+        # Unset: saving needs a folder; relative, missing and secrets/ folders are rejected.
+        self.assertEqual(api.get_save_folder(), '')
+        self.assertEqual(self.status_of_path('/api/save-folder', {'folder': 'relative/path'}), 400)
+        self.assertEqual(self.status_of_path('/api/save-folder', {'folder': str(target / 'missing')}), 400)
+        (api.ROOT / 'secrets').mkdir(exist_ok=True)
+        self.assertEqual(self.status_of_path('/api/save-folder', {'folder': str(api.ROOT / 'secrets')}), 400)
+        docx = api.RESUMES / '12345_20261104_151515_000005_chunk_tailored.docx'
+        docx.write_bytes(b'PK\x03\x04SAVE')
+        self.addCleanup(docx.unlink, missing_ok=True)
+        index = next(i for i, p in enumerate(api.resumes_for('12345')) if p.name == docx.name)
+        self.assertEqual(self.status_of_path(f'/api/resumes/12345/{index}/save', {}), 400)
+        # Set (quotes are tolerated, as pasted from Explorer), then save twice: no overwrite.
+        self.assertEqual(self.status_of_path('/api/save-folder', {'folder': f'"{target}"'}), 200)
+        self.assertEqual(api.get_save_folder(), str(target.resolve()))
+        self.assertEqual(self.status_of_path(f'/api/resumes/12345/{index}/save', {}), 201)
+        self.assertEqual(self.status_of_path(f'/api/resumes/12345/{index}/save', {}), 201)
+        self.assertEqual(sorted(p.name for p in target.iterdir()),
+                         ['SWE Intern_resume (2).docx', 'SWE Intern_resume.docx'])
+        self.assertEqual((target / 'SWE Intern_resume.docx').read_bytes(), b'PK\x03\x04SAVE')
+        # Browse uses the native picker seam; cancel keeps the folder.
+        original = api.BROWSE_FOLDER
+        try:
+            api.BROWSE_FOLDER = lambda initial: ''
+            self.assertEqual(self.status_of_path('/api/save-folder/browse', {}), 200)
+            self.assertEqual(api.get_save_folder(), str(target.resolve()))
+            api.BROWSE_FOLDER = None
+            self.assertEqual(self.status_of_path('/api/save-folder/browse', {}), 501)
+        finally:
+            api.BROWSE_FOLDER = original
+        # Clearing returns to browser downloads.
+        self.assertEqual(self.status_of_path('/api/save-folder', {'folder': ''}), 200)
+        self.assertEqual(api.get_save_folder(), '')
 
     def test_draft_summary_for_review_page(self):
         docx = api.RESUMES / '12345_20261104_121212_000002_chunk_tailored.docx'

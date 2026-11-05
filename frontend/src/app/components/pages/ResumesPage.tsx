@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DataMode, DraftKind, Icon, Job, LOCAL_API, LocalTask, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
+import { ACTION_HEADERS, DataMode, DraftKind, Icon, Job, LOCAL_API, LocalTask, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; resumesError: string;
@@ -9,6 +9,7 @@ type Props = {
   task: LocalTask | null; taskError: string; taskBusy: boolean; startTask: StartTask; onRefresh: () => void;
 };
 type Group = { jobId: string; company: string; title: string; versions: ResumeRecord[] };
+type SaveConfig = { folder: string; canBrowse: boolean };
 type Loaded = { key: string; preview: ResumePreview | null; error: string };
 
 const KIND_LABEL: Record<DraftKind, string> = { tailored: "Tailored from master", profile: "From My Profile", uploaded: "Your edit" };
@@ -32,6 +33,16 @@ export default function ResumesPage(props: Props) {
   const [confirmPaid, setConfirmPaid] = useState(false);
   const [activeJob, setActiveJob] = useState("");
   const [activeVersion, setActiveVersion] = useState("");
+  const [saveConfig, setSaveConfig] = useState<SaveConfig>({ folder: "", canBrowse: false });
+  useEffect(() => {
+    if (dataMode !== "local") return;
+    const controller = new AbortController();
+    fetch(`${LOCAL_API}/api/save-folder`, { signal: controller.signal, cache: "no-store" })
+      .then(r => r.ok ? r.json() as Promise<SaveConfig> : Promise.reject())
+      .then(setSaveConfig)
+      .catch(() => { /* Falls back to browser downloads. */ });
+    return () => controller.abort();
+  }, [dataMode]);
 
   const groups = groupDrafts(resumes);
   const group = groups.find(g => g.jobId === activeJob) ?? groups.find(g => g.jobId === draftJobId) ?? groups[0] ?? null;
@@ -88,12 +99,16 @@ export default function ResumesPage(props: Props) {
             <small>{g.versions.length} version{g.versions.length > 1 ? "s" : ""} · {new Date(g.versions[0].updatedAt).toLocaleDateString()}</small>
           </button>)}
         </nav>
-        {version && <DraftView key={version.id} group={group} version={version} onVersion={setActiveVersion} onUploaded={onRefresh}/>}
+        {version && <DraftView key={version.id} group={group} version={version} onVersion={setActiveVersion} onUploaded={onRefresh}
+          saveConfig={saveConfig} onSaveConfig={setSaveConfig}/>}
       </div>}
   </div>;
 }
 
-function DraftView({ group, version, onVersion, onUploaded }: { group: Group; version: ResumeRecord; onVersion: (id: string) => void; onUploaded: () => void }) {
+function DraftView({ group, version, onVersion, onUploaded, saveConfig, onSaveConfig }: {
+  group: Group; version: ResumeRecord; onVersion: (id: string) => void; onUploaded: () => void;
+  saveConfig: SaveConfig; onSaveConfig: (c: SaveConfig) => void;
+}) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const key = version.id;
   useEffect(() => {
@@ -110,7 +125,7 @@ function DraftView({ group, version, onVersion, onUploaded }: { group: Group; ve
   return <section className="panel studio-view">
     <div className="studio-view-head">
       <div><div className="panel-title">{group.title}</div><div className="panel-subtitle">{group.company} · {group.jobId}</div></div>
-      <a className="primary-button" href={`${LOCAL_API}/api/resumes/${version.jobId}/${version.index}/download`} title={version.downloadName ? `Saves as ${version.downloadName}` : undefined}><Icon name="download" size={17}/> Download Word</a>
+      <SaveControls key={saveConfig.folder} version={version} config={saveConfig} onConfig={onSaveConfig}/>
     </div>
     {group.versions.length > 1 && <div className="version-tabs" role="tablist">
       {group.versions.map((v, i) => <button key={v.id} role="tab" aria-selected={v.id === version.id} className={v.id === version.id ? "active" : ""} onClick={() => onVersion(v.id)}>
@@ -139,6 +154,63 @@ function DraftView({ group, version, onVersion, onUploaded }: { group: Group; ve
 
     <UploadEdited jobId={group.jobId} onUploaded={onUploaded}/>
   </section>;
+}
+
+// Folder box + Browse… left of the download button. With a folder set, the API
+// copies the draft there as "<Job title>_resume.docx"; empty = browser download.
+function SaveControls({ version, config, onConfig }: { version: ResumeRecord; config: SaveConfig; onConfig: (c: SaveConfig) => void }) {
+  const [text, setText] = useState(config.folder);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const post = async (path: string, body: object) => {
+    const res = await fetch(`${LOCAL_API}${path}`, { method: "POST", headers: ACTION_HEADERS, body: JSON.stringify(body) });
+    const data = await res.json() as { folder?: string; error?: string; saved?: string; cancelled?: boolean };
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  };
+  async function commit() {
+    if (text.trim() === config.folder) return;
+    setMessage(null);
+    try {
+      const data = await post("/api/save-folder", { folder: text });
+      onConfig({ ...config, folder: data.folder ?? "" });
+    } catch (e) { setMessage({ ok: false, text: e instanceof Error ? e.message : "Could not set the folder" }); }
+  }
+  async function browse() {
+    setBusy(true); setMessage({ ok: true, text: "Choose a folder in the window that opened…" });
+    try {
+      const data = await post("/api/save-folder/browse", {});
+      setMessage(null);
+      if (!data.cancelled) onConfig({ ...config, folder: data.folder ?? "" });
+    } catch (e) { setMessage({ ok: false, text: e instanceof Error ? e.message : "Could not open the folder picker" }); }
+    finally { setBusy(false); }
+  }
+  async function save() {
+    setBusy(true); setMessage(null);
+    try {
+      const data = await post(`/api/resumes/${version.jobId}/${version.index}/save`, {});
+      setMessage({ ok: true, text: `Saved to ${data.saved}` });
+    } catch (e) { setMessage({ ok: false, text: e instanceof Error ? e.message : "Save failed" }); }
+    finally { setBusy(false); }
+  }
+  async function openFolder() {
+    try { await post("/api/save-folder/open", {}); } catch { /* the path is shown anyway */ }
+  }
+  return <div className="save-controls">
+    <div className="save-row">
+      <label className="save-folder" title="Folder where the Word file is saved. Leave empty to use your browser's Downloads folder.">
+        <span>Save to</span>
+        <input value={text} placeholder="Browser Downloads folder" onChange={e => setText(e.target.value)} onBlur={commit}
+          onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }} spellCheck={false}/>
+      </label>
+      {config.canBrowse && <button className="secondary-button" disabled={busy} onClick={browse}>Browse…</button>}
+      {config.folder
+        ? <button className="primary-button" disabled={busy} onClick={save} title={version.downloadName ? `Saves as ${version.downloadName}` : undefined}><Icon name="download" size={17}/> Save Word</button>
+        : <a className="primary-button" href={`${LOCAL_API}/api/resumes/${version.jobId}/${version.index}/download`} title={version.downloadName ? `Downloads as ${version.downloadName}` : undefined}><Icon name="download" size={17}/> Download Word</a>}
+    </div>
+    {message && <p className={message.ok ? "save-message" : "stage4-warning save-message"}>{message.text}
+      {message.ok && message.text.startsWith("Saved to") && <button className="quiet-link" onClick={openFolder}>Open folder</button>}</p>}
+  </div>;
 }
 
 function UploadEdited({ jobId, onUploaded }: { jobId: string; onUploaded: () => void }) {

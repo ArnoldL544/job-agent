@@ -15,6 +15,8 @@ browser_session/
 /resumes/
 /chunk_output/
 /oldfolder/
+/local_settings.json
+/.local_settings_*.tmp
 /Resume_*.docx
 profile.txt
 resume_details.txt

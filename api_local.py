@@ -548,6 +548,81 @@ def draft_summary(docx: Path) -> dict | None:
 OPEN_FILE = getattr(os, "startfile", None)
 
 
+# ---- Save drafts straight into a folder the user picks --------------------
+def settings_file() -> Path:
+    return ROOT / "local_settings.json"
+
+
+def get_save_folder() -> str:
+    data = read_json(settings_file(), {})
+    folder = data.get("saveFolder") if isinstance(data, dict) else None
+    return folder if isinstance(folder, str) else ""
+
+
+def validate_folder(value: object) -> str:
+    """'' means the browser's own downloads folder; otherwise an existing absolute folder."""
+    if not isinstance(value, str) or len(value) > 400:
+        raise ValueError("Folder path must be text")
+    text = value.strip().strip('"')
+    if not text:
+        return ""
+    folder = Path(text).expanduser()
+    if not folder.is_absolute():
+        raise ValueError("Use a full path, for example C:\\Users\\you\\Documents\\Resumes")
+    if not folder.is_dir():
+        raise ValueError("That folder does not exist")
+    resolved = folder.resolve()
+    if resolved.is_relative_to((ROOT / "secrets").resolve()):
+        raise ValueError("Choose a folder outside secrets/")
+    return str(resolved)
+
+
+def set_save_folder(value: object) -> str:
+    folder = validate_folder(value)
+    data = read_json(settings_file(), {})
+    data = data if isinstance(data, dict) else {}
+    data["saveFolder"] = folder
+    atomic_json(settings_file(), data)
+    return folder
+
+
+def browse_folder_dialog(initial: str) -> str:
+    """Windows folder picker in its own STA PowerShell process; '' when cancelled."""
+    script = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+              "Add-Type -AssemblyName System.Windows.Forms;"
+              "$o=New-Object System.Windows.Forms.Form -Property @{TopMost=$true;ShowInTaskbar=$false};"
+              "$d=New-Object System.Windows.Forms.FolderBrowserDialog;"
+              "$d.Description='Choose where to save tailored resumes';"
+              "if($env:JA_INITIAL){$d.SelectedPath=$env:JA_INITIAL};"
+              "if($d.ShowDialog($o) -eq 'OK'){Write-Output $d.SelectedPath}")
+    # The initial path travels in an environment variable, never inside the script text.
+    env = dict(os.environ, JA_INITIAL=initial)
+    done = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", script],
+                          capture_output=True, timeout=600, env=env)
+    return done.stdout.decode("utf-8", "replace").strip().splitlines()[-1].strip() if done.stdout.strip() else ""
+
+
+# Tests replace this seam; None where no native picker exists.
+BROWSE_FOLDER = browse_folder_dialog if os.name == "nt" else None
+
+
+def save_draft_copy(source: Path, title: object) -> Path:
+    """Copy a draft into the chosen folder as '<title>_resume.docx', never overwriting."""
+    folder_text = get_save_folder()
+    if not folder_text:
+        raise ValueError("Choose a save folder first")
+    folder = Path(validate_folder(folder_text))
+    name = download_name(title)
+    target = folder / name
+    stem = name[:-len(".docx")]
+    counter = 2
+    while target.exists():
+        target = folder / f"{stem} ({counter}).docx"
+        counter += 1
+    shutil.copyfile(source, target)
+    return target
+
+
 def master_overview() -> dict:
     """The master resume as the chunk editor sees it, plus open fact questions.
 
@@ -787,6 +862,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"profile": get_profile()})
         if path == "/api/master":
             return self.send_json(master_overview())
+        if path == "/api/save-folder":
+            return self.send_json({"folder": get_save_folder(), "canBrowse": BROWSE_FOLDER is not None})
         if path == "/api/tracker":
             return self.send_json({"applications": read_tracker()})
         if path == "/api/schedule":
@@ -852,7 +929,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "Action header missing"}, 403)
         path = urlsplit(self.path).path
         upload = re.fullmatch(r"/api/resumes/([0-9]{1,18})/upload", path)
-        if path not in {"/api/tasks", "/api/profile", "/api/tracker", "/api/schedule", "/api/master/open"} and not upload:
+        save_copy = re.fullmatch(r"/api/resumes/([0-9]{1,18})/([0-9]{1,3})/save", path)
+        if path not in {"/api/tasks", "/api/profile", "/api/tracker", "/api/schedule", "/api/master/open",
+                        "/api/save-folder", "/api/save-folder/browse", "/api/save-folder/open"} and not upload and not save_copy:
             return self.send_json({"error": "Not found"}, 404)
         if upload:
             if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -886,6 +965,41 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/master/open":
             result, status = open_master()
             return self.send_json(result, status)
+        if path == "/api/save-folder":
+            try:
+                return self.send_json({"folder": set_save_folder(payload.get("folder"))})
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
+        if path == "/api/save-folder/browse":
+            if BROWSE_FOLDER is None:
+                return self.send_json({"error": "Folder picker is only available on Windows"}, 501)
+            try:
+                chosen = BROWSE_FOLDER(get_save_folder())
+            except (OSError, subprocess.SubprocessError):
+                return self.send_json({"error": "Could not open the folder picker"}, 500)
+            if not chosen:
+                return self.send_json({"folder": get_save_folder(), "cancelled": True})
+            try:
+                return self.send_json({"folder": set_save_folder(chosen)})
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
+        if path == "/api/save-folder/open":
+            folder = get_save_folder()
+            if not folder or OPEN_FILE is None:
+                return self.send_json({"error": "No save folder to open"}, 400)
+            OPEN_FILE(folder)
+            return self.send_json({"opened": folder})
+        if save_copy:
+            jid, index_str = save_copy.groups()
+            rows = merged_jobs()
+            paths = resumes_for(jid) if jid in rows else []
+            if int(index_str) >= len(paths):
+                return self.send_json({"error": "Resume not found"}, 404)
+            try:
+                target = save_draft_copy(paths[int(index_str)], rows[jid].get("title"))
+            except (ValueError, OSError) as exc:
+                return self.send_json({"error": str(exc)}, 400)
+            return self.send_json({"saved": str(target), "name": target.name}, 201)
         if path == "/api/profile":
             try:
                 cleaned = validate_profile(payload.get("profile"))
