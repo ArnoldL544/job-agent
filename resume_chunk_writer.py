@@ -76,6 +76,9 @@ def _create_response(client, **kwargs) -> tuple[object, str]:
     except Exception as exc:
         if MODEL == FALLBACK_MODEL or not _model_unavailable(exc):
             raise
+    # Shown in the dashboard's task log, so a wrong model ID is not silent.
+    print(f'WARNING: model "{MODEL}" is not available on this OpenAI account; '
+          f'using {FALLBACK_MODEL} instead. Check the Writing model setting.', flush=True)
     return client.responses.create(model=FALLBACK_MODEL, **kwargs), FALLBACK_MODEL
 SCHEMA = {
     'type': 'json_schema', 'name': 'selected_bullet_polish', 'strict': True,

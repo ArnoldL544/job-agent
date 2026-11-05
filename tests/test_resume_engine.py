@@ -194,6 +194,24 @@ class ResumeEngineTests(unittest.TestCase):
             self.assertEqual(self.status_of(dict(base, model=bad)), 400, bad)
             self.assertEqual(self.status_of_path('/api/writer-model', {'model': bad}), 400, bad)
         self.assertEqual(api.get_writer_model(), 'gpt-5.4-mini')
+        # Likely typos are rejected with a suggestion instead of silently falling back.
+        for typo, fix in (('gpt5.4', 'gpt-5.4'), ('GPT-5.4', 'gpt-5.4'), ('gpt_5.4_mini', 'gpt-5.4-mini'),
+                          ('gpt5.4mini', 'gpt-5.4-mini'), ('GPT-6', 'gpt-6'), ('gpt6-mini', 'gpt-6-mini')):
+            req = Request(f'http://127.0.0.1:{self.port}/api/writer-model', data=json.dumps({'model': typo}).encode(),
+                          headers={'Origin': 'http://localhost:3000', 'Content-Type': 'application/json',
+                                   'X-Job-Agent-Action': 'local-user-approved'}, method='POST')
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(req, timeout=4)
+            body = json.loads(ctx.exception.read())
+            ctx.exception.close()
+            self.assertEqual(body['suggestion'], fix, typo)
+            self.assertIn('Did you mean', body['error'])
+            self.assertEqual(self.status_of(dict(base, model=typo)), 400, typo)
+        # A typo saved before this guard existed falls back to the default, not to it.
+        settings = json.loads(api.settings_file().read_text(encoding='utf-8'))
+        api.settings_file().write_text(json.dumps(dict(settings, writerModel='gpt5.4')), encoding='utf-8')
+        self.assertEqual(api.get_writer_model(), 'gpt-5.4')
+        api.settings_file().write_text(json.dumps(settings), encoding='utf-8')
         # The older profile writer does not get the setting.
         self.assertEqual(self.status_of(dict(base, engine='profile', profileSource='legacy')), 202)
         task = self.wait()

@@ -598,10 +598,41 @@ DEFAULT_WRITER_MODEL = "gpt-5.4"
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 
+class ModelTypo(ValueError):
+    """A model ID that is almost certainly a misspelling of a known one."""
+    def __init__(self, model: str, suggestion: str):
+        super().__init__(f'"{model}" is not an OpenAI model ID. Did you mean {suggestion}?')
+        self.suggestion = suggestion
+
+
+def model_typo_hint(model: str) -> str | None:
+    """Catch slips like gpt5.4, GPT-5.4 or gpt_5.4_mini before a paid run silently falls back."""
+    known = [p["id"] for p in WRITER_MODELS]
+    if model in known:
+        return None
+    squash = lambda s: re.sub(r"[-_\s]", "", s.casefold())
+    for k in known:
+        if squash(model) == squash(k):
+            return k
+    if model != model.lower():  # OpenAI model IDs are lowercase.
+        return model.lower()
+    if re.fullmatch(r"gpt\d.*", model):  # gpt5-mini -> gpt-5-mini
+        return "gpt-" + model[3:]
+    return None
+
+
 def validate_model(value: object) -> str:
     if not isinstance(value, str) or not MODEL_ID.fullmatch(value.strip()):
         raise ValueError("Model ID must be 1-64 letters, digits, dots, dashes or colons, like gpt-5.4")
-    return value.strip()
+    model = value.strip()
+    hint = model_typo_hint(model)
+    if hint:
+        raise ModelTypo(model, hint)
+    return model
+
+
+def model_error(exc: ValueError) -> dict:
+    return {"error": str(exc), **({"suggestion": exc.suggestion} if isinstance(exc, ModelTypo) else {})}
 
 
 def get_writer_model() -> str:
@@ -866,7 +897,7 @@ def start_task(payload: dict) -> tuple[dict, int]:
             try:
                 model = validate_model(payload["model"]) if "model" in payload else get_writer_model()
             except ValueError as exc:
-                return {"error": str(exc)}, 400
+                return model_error(exc), 400
             extra_env["JOB_AGENT_WRITER_MODEL"] = model
         elif engine != "profile":
             return {"error": "Unknown resume engine"}, 400
@@ -1028,7 +1059,7 @@ class Handler(BaseHTTPRequestHandler):
                 set_writer_model(payload.get("model"))
                 return self.send_json(writer_model_overview())
             except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
+                return self.send_json(model_error(exc), 400)
         if path == "/api/save-folder/browse":
             if BROWSE_FOLDER is None:
                 return self.send_json({"error": "Folder picker is only available on Windows"}, 501)

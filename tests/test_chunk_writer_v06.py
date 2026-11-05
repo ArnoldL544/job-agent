@@ -175,9 +175,13 @@ class GenerateV06Tests(unittest.TestCase):
         if cw.MODEL == cw.FALLBACK_MODEL:
             self.skipTest('default model already equals fallback')
         client = _Client(fail_first=NotFoundError('The model gpt-x does not exist'))
-        result = cw.generate(client, self.master, JD, '11651900', self.root / 'fb')
+        with mock.patch('builtins.print') as printed:
+            result = cw.generate(client, self.master, JD, '11651900', self.root / 'fb')
         self.assertEqual(client.models, [cw.MODEL, cw.FALLBACK_MODEL])
         self.assertEqual(result['model'], cw.FALLBACK_MODEL)
+        # The fallback is announced in the task log, not silent.
+        warning = ' '.join(str(c.args[0]) for c in printed.call_args_list if c.args)
+        self.assertIn(f'"{cw.MODEL}" is not available', warning)
 
     def test_other_errors_are_not_retried(self):
         client = _Client(fail_first=RuntimeError('rate limited'))

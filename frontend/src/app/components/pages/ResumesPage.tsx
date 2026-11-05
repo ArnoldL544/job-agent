@@ -180,15 +180,19 @@ function ModelPicker({ config, onSaved }: { config: ModelConfig; onSaved: (c: Mo
   const isPreset = config.presets.some(p => p.id === config.model);
   const [custom, setCustom] = useState(!isPreset);
   const [text, setText] = useState(isPreset ? "" : config.model);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ text: string; suggestion?: string } | null>(null);
   async function save(model: string) {
-    setError("");
+    setError(null);
     try {
       const res = await fetch(`${LOCAL_API}/api/writer-model`, { method: "POST", headers: ACTION_HEADERS, body: JSON.stringify({ model }) });
-      const data = await res.json() as ModelConfig & { error?: string };
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      const data = await res.json() as ModelConfig & { error?: string; suggestion?: string };
+      if (!res.ok) { setError({ text: data.error || `HTTP ${res.status}`, suggestion: data.suggestion }); return; }
       onSaved(data);
-    } catch (e) { setError(e instanceof Error ? e.message : "Could not save the model"); }
+      // A suggestion that is a preset goes back to the dropdown.
+      const preset = data.presets.some(p => p.id === data.model);
+      setCustom(!preset);
+      setText(preset ? "" : data.model);
+    } catch { setError({ text: "Could not reach the local API to save the model" }); }
   }
   function choose(value: string) {
     if (value === CUSTOM) { setCustom(true); return; }
@@ -210,7 +214,9 @@ function ModelPicker({ config, onSaved }: { config: ModelConfig; onSaved: (c: Mo
         onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && text.trim()) save(text.trim()); }}/>
       <button className="secondary-button" disabled={!text.trim() || text.trim() === config.model} onClick={() => save(text.trim())}>Use this model</button>
     </div>}
-    {error ? <p className="stage4-warning save-message">{error}</p> : note && <p className="stage4-muted model-note">{note}{custom && !isPreset ? ` Now using ${config.model}.` : ""}</p>}
+    {error ? <div className="model-error"><p className="stage4-warning save-message">{error.text}</p>
+      {error.suggestion && <button className="secondary-button" onClick={() => save(error.suggestion!)}>Use {error.suggestion}</button>}
+    </div> : note && <p className="stage4-muted model-note">{note}{custom && !isPreset ? ` Now using ${config.model}.` : ""}</p>}
   </div>;
 }
 
