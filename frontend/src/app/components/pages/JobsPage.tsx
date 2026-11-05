@@ -3,9 +3,13 @@
 import { useMemo, useState } from "react";
 import { DataMode, Icon, Job, JobRow } from "../../lib/shared";
 
-type Props = { dataMode: DataMode; jobs: Job[]; shortlisted: string[]; applied: string[]; onOpenJob: (id: string) => void; onToggleSave: (id: string) => void };
+type Props = {
+  dataMode: DataMode; jobs: Job[]; shortlisted: string[]; applied: string[]; onOpenJob: (id: string) => void; onToggleSave: (id: string) => void;
+  // The High matches and Shortlisted pages pass a pre-filtered list and their own empty message.
+  empty?: { title: string; text: string };
+};
 
-export default function JobsPage({ dataMode, jobs, shortlisted, applied, onOpenJob, onToggleSave }: Props) {
+export default function JobsPage({ dataMode, jobs, shortlisted, applied, onOpenJob, onToggleSave, empty }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All positions");
   const [sort, setSort] = useState<"score" | "deadline">("score");
@@ -35,7 +39,9 @@ export default function JobsPage({ dataMode, jobs, shortlisted, applied, onOpenJ
       <label className="select-field"><select value={sort} onChange={e => setSort(e.target.value as "score" | "deadline")} aria-label="Sort positions"><option value="score">Best match first</option><option value="deadline">Deadline soonest</option></select></label>
       <span className="neutral-chip">{filtered.length} of {jobs.length}</span>
     </div>
-    <div className="job-list detailed-list">{filtered.length
+    <div className="job-list detailed-list">{jobs.length === 0 && empty
+      ? <div className="empty-state"><Icon name="search" size={29}/><strong>{empty.title}</strong><p>{empty.text}</p></div>
+      : filtered.length
       ? filtered.map(job => <JobRow key={job.id} job={job} saved={shortlisted.includes(job.id)} applied={applied.includes(job.id)} onOpen={() => onOpenJob(job.id)} onSave={() => onToggleSave(job.id)}/>)
       : <div className="empty-state"><Icon name="search" size={29}/><strong>No matching positions</strong><p>Try another search or filter.</p><button className="secondary-button" onClick={() => { setSearch(""); setFilter("All positions"); }}>Clear filters</button></div>}
     </div>

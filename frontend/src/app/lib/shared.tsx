@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export const LOCAL_API = "http://127.0.0.1:8765";
 export const ACTION_HEADERS = { "Content-Type": "application/json", "X-Job-Agent-Action": "local-user-approved" };
 
-export type Page = "overview" | "find" | "opportunities" | "details" | "resumes" | "master" | "profile";
+export type Page = "overview" | "find" | "opportunities" | "high" | "shortlist" | "drafts" | "details" | "resumes" | "master" | "profile";
 export type DataMode = "demo" | "local";
 export type Match = "High Match" | "Review" | "Verify Eligibility" | "Conflict";
 
@@ -18,7 +18,8 @@ export type Job = {
 };
 export type JobDetail = { jobId: string; hasJd: boolean; jdText: string; jdFilename: string | null; priority: string; screeningNotes: string[] };
 export type DraftKind = "tailored" | "profile" | "uploaded";
-export type ResumeRecord = { id: string; jobId: string; index: number; company: string; jobTitle: string; filename: string; updatedAt: string; hasTextPreview: boolean; kind?: DraftKind; downloadName?: string };
+export const DRAFT_KIND_LABEL: Record<DraftKind, string> = { tailored: "Tailored from master", profile: "From My Profile", uploaded: "Your edit" };
+export type ResumeRecord ={ id: string; jobId: string; index: number; company: string; jobTitle: string; filename: string; updatedAt: string; hasTextPreview: boolean; kind?: DraftKind; downloadName?: string };
 export type DraftSummary = {
   model: string; focus: string[]; questions: { question: string; bullet: string }[];
   changes: { section: string; kind: "rewritten" | "merged"; before: string[]; after: string }[];

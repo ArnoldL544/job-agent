@@ -1,14 +1,14 @@
 "use client";
 
-import { AppliedCheck, AppliedChip, DataMode, deadlineLabel, Icon, Job, JobRow, MatchTag, ResumeRecord } from "../../lib/shared";
+import { AppliedCheck, AppliedChip, DataMode, deadlineLabel, Icon, Job, JobRow, MatchTag, Page, ResumeRecord } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; shortlisted: string[]; applied: string[];
-  onFindJobs: () => void; onJobs: () => void; onOpenJob: (id: string) => void;
+  onFindJobs: () => void; onJobs: () => void; onOpenJob: (id: string) => void; onOpenList: (page: Page) => void;
   onToggleSave: (id: string) => void; onToggleApplied: (id: string) => void; onOpenDrafts: (jobId: string) => void;
 };
 
-export default function HomePage({ dataMode, jobs, resumes, shortlisted, applied, onFindJobs, onJobs, onOpenJob, onToggleSave, onToggleApplied, onOpenDrafts }: Props) {
+export default function HomePage({ dataMode, jobs, resumes, shortlisted, applied, onFindJobs, onJobs, onOpenJob, onOpenList, onToggleSave, onToggleApplied, onOpenDrafts }: Props) {
   const local = dataMode === "local";
   const best = [...jobs].sort((a, b) => b.score - a.score).slice(0, 3);
   const highCount = jobs.filter(j => j.match === "High Match").length;
@@ -23,18 +23,21 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, applied
     if (!latest.some(x => x.jobId === r.jobId)) latest.push(r);
     if (latest.length === 3) break;
   }
-  const metrics = [
-    { label: local ? "Saved jobs" : "Sample jobs", value: jobs.length, icon: "briefcase" as const, tone: "mint-bg" },
-    { label: "High matches", value: highCount, icon: "sparkles" as const, tone: "blue-bg" },
-    { label: "Shortlisted", value: shortlisted.length, icon: "bookmark" as const, tone: "purple-bg" },
-    { label: "Resume drafts", value: local ? resumes.length : 0, icon: "file" as const, tone: "orange-bg" },
+  // Shortlist entries can outlive a job that is no longer in the list.
+  const shortlistCount = jobs.filter(j => shortlisted.includes(j.id)).length;
+  const metrics: { label: string; value: number; icon: "briefcase" | "sparkles" | "bookmark" | "file"; tone: string; page: Page }[] = [
+    { label: local ? "Saved jobs" : "Sample jobs", value: jobs.length, icon: "briefcase", tone: "mint-bg", page: "opportunities" },
+    { label: "High matches", value: highCount, icon: "sparkles", tone: "blue-bg", page: "high" },
+    { label: "Shortlisted", value: shortlistCount, icon: "bookmark", tone: "purple-bg", page: "shortlist" },
+    { label: "Resume drafts", value: local ? resumes.length : 0, icon: "file", tone: "orange-bg", page: "drafts" },
   ];
   return <>
     <div className="metrics-grid">
-      {metrics.map(m => <div className="metric-card" key={m.label}>
+      {metrics.map(m => <button className="metric-card metric-button" key={m.label} onClick={() => onOpenList(m.page)} title={`Open ${m.label.toLowerCase()}`}>
         <div className="metric-top"><span>{m.label}</span><span className={`metric-icon ${m.tone}`}><Icon name={m.icon} size={19}/></span></div>
         <div className="metric-number">{m.value}</div>
-      </div>)}
+        <div className="metric-open">View all <Icon name="arrow" size={13}/></div>
+      </button>)}
     </div>
     <div className="content-grid">
       <section className="panel featured-panel">

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ACTION_HEADERS, DataMode, DraftKind, Icon, Job, LOCAL_API, LocalTask, PostingLink, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
+import { ACTION_HEADERS, DataMode, DRAFT_KIND_LABEL, Icon, Job, LOCAL_API, LocalTask, PostingLink, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; resumesError: string; applied: string[];
-  draftJobId: string; setDraftJobId: (id: string) => void;
+  draftJobId: string; setDraftJobId: (id: string) => void; draftVersionId?: string;
   task: LocalTask | null; taskError: string; taskBusy: boolean; startTask: StartTask; onRefresh: () => void;
 };
 type Group = { jobId: string; company: string; title: string; versions: ResumeRecord[] };
@@ -14,7 +14,7 @@ type Loaded = { key: string; preview: ResumePreview | null; error: string };
 type ModelConfig = { model: string; default: string; presets: { id: string; label: string; note: string }[] };
 const CUSTOM = "__custom";
 
-const KIND_LABEL: Record<DraftKind, string> = { tailored: "Tailored from master", profile: "From My Profile", uploaded: "Your edit" };
+const KIND_LABEL = DRAFT_KIND_LABEL;
 
 function groupDrafts(resumes: ResumeRecord[]): Group[] {
   const map = new Map<string, Group>();
@@ -27,14 +27,14 @@ function groupDrafts(resumes: ResumeRecord[]): Group[] {
 }
 
 export default function ResumesPage(props: Props) {
-  const { dataMode, jobs, resumes, resumesError, applied, draftJobId, setDraftJobId, task, taskError, taskBusy, startTask, onRefresh } = props;
+  const { dataMode, jobs, resumes, resumesError, applied, draftJobId, setDraftJobId, draftVersionId = "", task, taskError, taskBusy, startTask, onRefresh } = props;
   const [engine, setEngine] = useState<"chunk" | "profile">("chunk");
   const [profileSource, setProfileSource] = useState<"json" | "legacy">("json");
   const [allowRisk, setAllowRisk] = useState(false);
   const [forceDraft, setForceDraft] = useState(false);
   const [confirmPaid, setConfirmPaid] = useState(false);
   const [activeJob, setActiveJob] = useState("");
-  const [activeVersion, setActiveVersion] = useState("");
+  const [activeVersion, setActiveVersion] = useState(draftVersionId);
   const [saveConfig, setSaveConfig] = useState<SaveConfig>({ folder: "", canBrowse: false });
   const [models, setModels] = useState<ModelConfig | null>(null);
   useEffect(() => {

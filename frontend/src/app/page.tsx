@@ -8,6 +8,7 @@ import JobDetailPage from "./components/pages/JobDetailPage";
 import JobsPage from "./components/pages/JobsPage";
 import MasterResumePage from "./components/pages/MasterResumePage";
 import ResumesPage from "./components/pages/ResumesPage";
+import DraftsPage from "./components/pages/DraftsPage";
 import "./components/studio.css";
 import { ACTION_HEADERS, DataMode, Icon, isApplied, Job, LOCAL_API, LocalTask, Page, ResumeRecord } from "./lib/shared";
 
@@ -24,22 +25,28 @@ const SAMPLE_JOBS: Job[] = [
 ];
 
 // Sidebar follows the workflow: find -> review -> tailor -> profile.
+// Job lists (saved, high matches, shortlist, drafts) open from the Home cards.
 const MENU: { id: Page; label: string; icon: "grid" | "mail" | "briefcase" | "file" | "layers" }[] = [
   { id: "overview", label: "Home", icon: "grid" },
   { id: "find", label: "Find Jobs", icon: "mail" },
-  { id: "opportunities", label: "Jobs", icon: "briefcase" },
   { id: "resumes", label: "Resumes", icon: "file" },
   { id: "master", label: "Master Resume", icon: "layers" },
 ];
 const TITLES: Record<Page, { title: string; subtitle: string }> = {
   overview: { title: "Your career workspace", subtitle: "New jobs, deadlines and drafts at a glance." },
   find: { title: "Find jobs", subtitle: "Import Handshake jobs from Gmail and score them." },
-  opportunities: { title: "Jobs", subtitle: "Every saved job, ranked by match score." },
+  opportunities: { title: "Saved jobs", subtitle: "Every saved job, ranked by match score." },
+  high: { title: "High matches", subtitle: "Jobs your screening rated as a high match." },
+  shortlist: { title: "Shortlisted", subtitle: "Jobs you bookmarked to come back to." },
+  drafts: { title: "Resume drafts", subtitle: "Every tailored resume and the job it was written for." },
   details: { title: "Job details", subtitle: "Read the job, track your application, tailor a resume." },
   resumes: { title: "Resumes", subtitle: "Generate tailored drafts and review what changed." },
   master: { title: "Master resume", subtitle: "The one resume every tailored draft is built from." },
   profile: { title: "My Profile (older)", subtitle: "Used only by the older “Write from My Profile” option." },
 };
+
+// Pages a job can be opened from; "Back" on the job page returns there.
+const LIST_PAGES: Page[] = ["overview", "opportunities", "high", "shortlist", "drafts"];
 
 export default function Home() {
   const [dataMode, setDataMode] = useState<DataMode>("demo");
@@ -53,6 +60,9 @@ export default function Home() {
   const [page, setPage] = useState<Page>("overview");
   const [selectedId, setSelectedId] = useState("SAMPLE-001");
   const [draftJobId, setDraftJobId] = useState("");
+  const [draftVersionId, setDraftVersionId] = useState("");
+  // Where "Back" on a job's page returns to.
+  const [listPage, setListPage] = useState<Page>("opportunities");
   const [shortlisted, setShortlisted] = useState<string[]>(["SAMPLE-001", "SAMPLE-002"]);
   const [applied, setApplied] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -137,9 +147,12 @@ export default function Home() {
     } finally { setStartingTask(false); }
   }
   function navigate(next: Page) { setPage(next); setSidebarOpen(false); }
-  function openJob(id: string) { setSelectedId(id); navigate("details"); }
-  // Opening Resumes for a job preselects it in the form and its drafts.
-  function openResumes(id: string) { setDraftJobId(id); navigate("resumes"); }
+  function openJob(id: string) {
+    if (page !== "details") setListPage(LIST_PAGES.includes(page) ? page : "opportunities");
+    setSelectedId(id); navigate("details");
+  }
+  // Opening Resumes for a job preselects it in the form and its drafts (and a version, from the drafts list).
+  function openResumes(id: string, versionId = "") { setDraftJobId(id); setDraftVersionId(versionId); navigate("resumes"); }
   function toggleSave(id: string) {
     const saved = !shortlisted.includes(id);
     setShortlisted(prev => saved ? [...prev.filter(x => x !== id), id] : prev.filter(x => x !== id));
@@ -159,8 +172,13 @@ export default function Home() {
       .catch(() => setApplied(prev => nowApplied ? prev.filter(x => x !== id) : [...prev, id]));
   }
   const selected = jobs.find(j => j.id === selectedId) ?? jobs[0];
-  const activeMenu = page === "details" ? "opportunities" : page === "profile" ? "master" : page;
+  const activeMenu = page === "profile" ? "master" : LIST_PAGES.includes(page) || page === "details" ? "overview" : page;
   const hero = TITLES[page];
+  const listTitle = listPage === "overview" ? "Home" : TITLES[listPage].title;
+  const crumb = page === "details" ? (listPage === "overview" ? `Home / ${selected.company}` : `Home / ${listTitle} / ${selected.company}`)
+    : page === "profile" ? "Master Resume / My Profile"
+    : LIST_PAGES.includes(page) && page !== "overview" ? `Home / ${hero.title}`
+    : MENU.find(x => x.id === page)?.label;
 
   return <div className="app-shell">
     {sidebarOpen && <button className="mobile-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation"/>}
@@ -172,21 +190,28 @@ export default function Home() {
     </aside>
 
     <main className="main-content">
-      <header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Icon name="menu" size={20}/></button><span className="breadcrumb-active">{page === "details" ? `Jobs / ${selected.company}` : page === "profile" ? "Master Resume / My Profile" : MENU.find(x => x.id === page)?.label}</span></div></header>
+      <header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Icon name="menu" size={20}/></button><span className="breadcrumb-active">{crumb}</span></div></header>
       <div className="page-content">
         <div className="page-heading"><div><h1>{hero.title}<span className="title-accent">.</span></h1><p>{hero.subtitle}</p></div></div>
         {!local && <div className="demo-notice"><Icon name="info" size={18}/><span><strong>Sample data.</strong> The local API is not running, so the companies and scores shown are fictional. Start the app with start.bat to see your own jobs.</span></div>}
 
         {page === "overview" && <HomePage dataMode={dataMode} jobs={jobs} resumes={resumes} shortlisted={shortlisted} applied={applied}
-          onFindJobs={() => navigate("find")} onJobs={() => navigate("opportunities")} onOpenJob={openJob}
+          onFindJobs={() => navigate("find")} onJobs={() => navigate("opportunities")} onOpenJob={openJob} onOpenList={navigate}
           onToggleSave={toggleSave} onToggleApplied={toggleApplied} onOpenDrafts={openResumes}/>}
         {page === "find" && <FindJobsPage dataMode={dataMode} task={task} taskError={taskError} taskBusy={taskBusy} startTask={startTask} onTaskDone={() => setRefresh(v => v + 1)}/>}
+        {LIST_PAGES.includes(page) && page !== "overview" && <button className="secondary-button product-back" onClick={() => navigate("overview")}><Icon name="chevron" size={15}/> Back to Home</button>}
         {page === "opportunities" && <JobsPage dataMode={dataMode} jobs={jobs} shortlisted={shortlisted} applied={applied} onOpenJob={openJob} onToggleSave={toggleSave}/>}
+        {page === "high" && <JobsPage dataMode={dataMode} jobs={jobs.filter(j => j.match === "High Match")} shortlisted={shortlisted} applied={applied} onOpenJob={openJob} onToggleSave={toggleSave}
+          empty={{ title: "No high matches yet", text: "Find new jobs or rescore your saved jobs to see high matches here." }}/>}
+        {page === "shortlist" && <JobsPage dataMode={dataMode} jobs={jobs.filter(j => shortlisted.includes(j.id))} shortlisted={shortlisted} applied={applied} onOpenJob={openJob} onToggleSave={toggleSave}
+          empty={{ title: "Nothing shortlisted yet", text: "Click the bookmark on any job to keep it here." }}/>}
+        {page === "drafts" && <DraftsPage dataMode={dataMode} jobs={jobs} resumes={resumes} resumesError={resumesError} applied={applied}
+          onOpenJob={openJob} onReview={openResumes}/>}
         {page === "details" && <JobDetailPage dataMode={dataMode} job={selected} others={jobs.filter(j => j.id !== selected.id)} saved={shortlisted.includes(selected.id)}
           applied={applied.includes(selected.id)}
-          onBack={() => navigate("opportunities")} onSelect={setSelectedId} onToggleSave={() => toggleSave(selected.id)} onTailor={() => openResumes(selected.id)}/>}
+          backLabel={listPage === "overview" ? "Back to Home" : `Back to ${listTitle.toLowerCase()}`} onBack={() => navigate(listPage)} onSelect={setSelectedId} onToggleSave={() => toggleSave(selected.id)} onTailor={() => openResumes(selected.id)}/>}
         {page === "resumes" && <ResumesPage dataMode={dataMode} jobs={jobs} resumes={resumes} resumesError={resumesError} applied={applied}
-          draftJobId={draftJobId} setDraftJobId={setDraftJobId} task={task} taskError={taskError} taskBusy={taskBusy}
+          draftJobId={draftJobId} setDraftJobId={setDraftJobId} draftVersionId={draftVersionId} task={task} taskError={taskError} taskBusy={taskBusy}
           startTask={startTask} onRefresh={() => setRefresh(v => v + 1)}/>}
         {page === "master" && <MasterResumePage dataMode={dataMode} onOpenProfileForm={() => navigate("profile")}/>}
         {page === "profile" && <>

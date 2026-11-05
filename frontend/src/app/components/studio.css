@@ -169,3 +169,16 @@
 .model-note{margin:0;font-size:12.5px}
 .model-error{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .model-error .save-message,.model-picker > .stage4-warning{margin:0;justify-content:flex-start;text-align:left;color:#f5c680}
+/* Home cards open their list */
+.metric-button{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,transform .15s}
+.metric-button:hover{border-color:rgba(59,222,189,.45);transform:translateY(-1px)}
+.metric-button:focus-visible{outline:2px solid #3bdebd;outline-offset:2px}
+.metric-open{display:flex;align-items:center;gap:5px;margin-top:14px;font-size:11.5px;font-weight:600;color:#6fdcc4;opacity:.75}
+.metric-button:hover .metric-open{opacity:1}
+/* Resume drafts list */
+.draft-row .job-row-company{text-transform:none}
+.draft-title-static{cursor:default}
+.draft-version{font-size:11.5px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:#a9bbcc}
+.draft-latest{border-color:rgba(59,222,189,.4);color:#6fdcc4}
+.draft-review{white-space:nowrap}
+.draft-list-error{margin:0 24px 8px}

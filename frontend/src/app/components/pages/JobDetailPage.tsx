@@ -5,12 +5,12 @@ import { ApplicationTracker } from "../AgentExtras";
 import { AppliedChip, CompanyMark, DataMode, deadlineLabel, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag, PostingLink } from "../../lib/shared";
 
 type Props = {
-  dataMode: DataMode; job: Job; others: Job[]; saved: boolean; applied: boolean;
+  dataMode: DataMode; job: Job; others: Job[]; saved: boolean; applied: boolean; backLabel?: string;
   onBack: () => void; onSelect: (id: string) => void; onToggleSave: () => void; onTailor: () => void;
 };
 type Loaded = { id: string; detail: JobDetail | null; error: string };
 
-export default function JobDetailPage({ dataMode, job, others, saved, applied, onBack, onSelect, onToggleSave, onTailor }: Props) {
+export default function JobDetailPage({ dataMode, job, others, saved, applied, backLabel = "Back to jobs", onBack, onSelect, onToggleSave, onTailor }: Props) {
   const local = dataMode === "local";
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   useEffect(() => {
@@ -35,7 +35,7 @@ export default function JobDetailPage({ dataMode, job, others, saved, applied, o
   ] as [string, string, string][]).filter(([, value]) => value);
 
   return <>
-    <button className="secondary-button product-back" onClick={onBack}><Icon name="chevron" size={15}/> Back to jobs</button>
+    <button className="secondary-button product-back" onClick={onBack}><Icon name="chevron" size={15}/> {backLabel}</button>
     <div className="detail-layout">
       <section className="panel detail-primary">
         <div className="detail-header"><CompanyMark job={job} size="large"/><div className="detail-header-main">
