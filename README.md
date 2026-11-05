@@ -10,6 +10,7 @@ Nothing is submitted automatically. Every resume is a draft for you to review, a
 - Job description extraction with Playwright
 - Rule-based screening: match level, OPT/CPT and eligibility flags, location
 - Chunk-based resume tailoring: picks the most relevant sections and bullets from your master resume, fills exactly one page, and polishes bullets with one OpenAI call
+- Choose the writing model on the Resumes page (GPT-5.4 by default, GPT-5.4 mini, or any OpenAI model ID). The choice is saved in `local_settings.json`. If a model is unavailable, the writer retries once with GPT-5.4 mini
 - Offline preview of the chunk selection, with no API call
 - Next.js dashboard: Find Jobs (Gmail import), jobs with location / pay / deadline / work authorization, tailored drafts with a review of what changed, a Master Resume page (what the editor reads, open fact questions, open in Word), application tracker, schedule
 - Local-only API on `127.0.0.1:8765`
@@ -98,6 +99,8 @@ python run_screened_resumes.py --list       # list screened jobs
 python run_screened_resumes.py --job-id JOB_ID --chunk-tailored   # tailored draft (one OpenAI call)
 python chunk_v05_preview.py --job-id JOB_ID # offline chunk preview, no API call
 ```
+
+On the command line the writer model comes from the `JOB_AGENT_WRITER_MODEL` environment variable (default `gpt-5.4`).
 
 ## Output folders (git-ignored)
 

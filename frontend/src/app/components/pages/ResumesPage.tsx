@@ -11,6 +11,8 @@ type Props = {
 type Group = { jobId: string; company: string; title: string; versions: ResumeRecord[] };
 type SaveConfig = { folder: string; canBrowse: boolean };
 type Loaded = { key: string; preview: ResumePreview | null; error: string };
+type ModelConfig = { model: string; default: string; presets: { id: string; label: string; note: string }[] };
+const CUSTOM = "__custom";
 
 const KIND_LABEL: Record<DraftKind, string> = { tailored: "Tailored from master", profile: "From My Profile", uploaded: "Your edit" };
 
@@ -34,6 +36,7 @@ export default function ResumesPage(props: Props) {
   const [activeJob, setActiveJob] = useState("");
   const [activeVersion, setActiveVersion] = useState("");
   const [saveConfig, setSaveConfig] = useState<SaveConfig>({ folder: "", canBrowse: false });
+  const [models, setModels] = useState<ModelConfig | null>(null);
   useEffect(() => {
     if (dataMode !== "local") return;
     const controller = new AbortController();
@@ -41,8 +44,13 @@ export default function ResumesPage(props: Props) {
       .then(r => r.ok ? r.json() as Promise<SaveConfig> : Promise.reject())
       .then(setSaveConfig)
       .catch(() => { /* Falls back to browser downloads. */ });
+    fetch(`${LOCAL_API}/api/writer-model`, { signal: controller.signal, cache: "no-store" })
+      .then(r => r.ok ? r.json() as Promise<ModelConfig> : Promise.reject())
+      .then(setModels)
+      .catch(() => { /* Older API: the server default model is used. */ });
     return () => controller.abort();
   }, [dataMode]);
+  const modelLabel = models ? models.presets.find(p => p.id === models.model)?.label ?? models.model : "";
 
   const groups = groupDrafts(resumes);
   const group = groups.find(g => g.jobId === activeJob) ?? groups.find(g => g.jobId === draftJobId) ?? groups[0] ?? null;
@@ -55,7 +63,8 @@ export default function ResumesPage(props: Props) {
   </section>;
 
   function generate() {
-    startTask({ action: "resume", jobId: targetId, confirmPaid: true, allowRisk, force: forceDraft, engine, profileSource });
+    startTask({ action: "resume", jobId: targetId, confirmPaid: true, allowRisk, force: forceDraft, engine, profileSource,
+      ...(engine === "chunk" && models ? { model: models.model } : {}) });
     setConfirmPaid(false);
     setActiveJob(targetId);
     setActiveVersion("");
@@ -69,6 +78,7 @@ export default function ResumesPage(props: Props) {
           {jobs.map(job => <option key={job.id} value={job.id}>{applied.includes(job.id) ? "✓ Applied · " : ""}{job.company} — {job.title} ({job.score}/100)</option>)}
         </select>
       </label>
+      {engine === "chunk" && models && <ModelPicker config={models} onSaved={setModels}/>}
       <p className="stage4-muted">{engine === "chunk"
         ? "Built from your master resume: picks the bullets that fit this job, rewrites them using only facts already in your resume, and keeps it to one page."
         : "Older method: writes a new draft from the My Profile form."}</p>
@@ -81,7 +91,7 @@ export default function ResumesPage(props: Props) {
         </label>}
       </details>
       <div className="studio-confirm">
-        <label className="stage5-check"><input type="checkbox" checked={confirmPaid} onChange={e => setConfirmPaid(e.target.checked)}/> I approve one paid OpenAI call for this job.</label>
+        <label className="stage5-check"><input type="checkbox" checked={confirmPaid} onChange={e => setConfirmPaid(e.target.checked)}/> I approve one paid OpenAI call{engine === "chunk" && modelLabel ? ` (${modelLabel})` : ""} for this job.</label>
         <button className="primary-button" disabled={!confirmPaid || taskBusy || !targetId} onClick={generate}><Icon name="sparkles" size={16}/>{taskBusy ? "A task is running…" : "Generate draft"}</button>
       </div>
     </section>
@@ -162,6 +172,46 @@ function DraftView({ group, version, onVersion, onUploaded, saveConfig, onSaveCo
 
     <UploadEdited jobId={group.jobId} onUploaded={onUploaded}/>
   </section>;
+}
+
+// Which OpenAI model writes the draft. The choice is saved by the local API and
+// used for later drafts; "Other" accepts any model ID the OpenAI account has.
+function ModelPicker({ config, onSaved }: { config: ModelConfig; onSaved: (c: ModelConfig) => void }) {
+  const isPreset = config.presets.some(p => p.id === config.model);
+  const [custom, setCustom] = useState(!isPreset);
+  const [text, setText] = useState(isPreset ? "" : config.model);
+  const [error, setError] = useState("");
+  async function save(model: string) {
+    setError("");
+    try {
+      const res = await fetch(`${LOCAL_API}/api/writer-model`, { method: "POST", headers: ACTION_HEADERS, body: JSON.stringify({ model }) });
+      const data = await res.json() as ModelConfig & { error?: string };
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      onSaved(data);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not save the model"); }
+  }
+  function choose(value: string) {
+    if (value === CUSTOM) { setCustom(true); return; }
+    setCustom(false);
+    save(value);
+  }
+  const note = custom
+    ? "Type any OpenAI model ID your account can use. If it is not available, the writer falls back to GPT-5.4 mini."
+    : config.presets.find(p => p.id === config.model)?.note;
+  return <div className="model-picker">
+    <label className="stage5-field">Writing model
+      <select value={custom ? CUSTOM : config.model} onChange={e => choose(e.target.value)}>
+        {config.presets.map(p => <option key={p.id} value={p.id}>{p.label}{p.id === config.default ? " (default)" : ""}</option>)}
+        <option value={CUSTOM}>Other model ID…</option>
+      </select>
+    </label>
+    {custom && <div className="model-custom">
+      <input value={text} placeholder="e.g. gpt-5.4" spellCheck={false} aria-label="Custom model ID"
+        onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && text.trim()) save(text.trim()); }}/>
+      <button className="secondary-button" disabled={!text.trim() || text.trim() === config.model} onClick={() => save(text.trim())}>Use this model</button>
+    </div>}
+    {error ? <p className="stage4-warning save-message">{error}</p> : note && <p className="stage4-muted model-note">{note}{custom && !isPreset ? ` Now using ${config.model}.` : ""}</p>}
+  </div>;
 }
 
 // Folder box + Browse… left of the download button. With a folder set, the API

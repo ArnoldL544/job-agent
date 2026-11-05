@@ -586,6 +586,46 @@ def set_save_folder(value: object) -> str:
     return folder
 
 
+# ---- Which OpenAI model writes the tailored resume -------------------------
+# Same OpenAI key works for every model listed here; "custom" lets the user
+# type any other model ID their account has. If a model is unavailable, the
+# writer retries once with gpt-5.4-mini (see resume_chunk_writer.py).
+WRITER_MODELS = [
+    {"id": "gpt-5.4", "label": "GPT-5.4", "note": "Best writing quality. Default."},
+    {"id": "gpt-5.4-mini", "label": "GPT-5.4 mini", "note": "Cheaper and faster, a bit plainer wording."},
+]
+DEFAULT_WRITER_MODEL = "gpt-5.4"
+MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+
+
+def validate_model(value: object) -> str:
+    if not isinstance(value, str) or not MODEL_ID.fullmatch(value.strip()):
+        raise ValueError("Model ID must be 1-64 letters, digits, dots, dashes or colons, like gpt-5.4")
+    return value.strip()
+
+
+def get_writer_model() -> str:
+    data = read_json(settings_file(), {})
+    value = data.get("writerModel") if isinstance(data, dict) else None
+    try:
+        return validate_model(value)
+    except ValueError:
+        return DEFAULT_WRITER_MODEL
+
+
+def set_writer_model(value: object) -> str:
+    model = validate_model(value)
+    data = read_json(settings_file(), {})
+    data = data if isinstance(data, dict) else {}
+    data["writerModel"] = model
+    atomic_json(settings_file(), data)
+    return model
+
+
+def writer_model_overview() -> dict:
+    return {"model": get_writer_model(), "default": DEFAULT_WRITER_MODEL, "presets": WRITER_MODELS}
+
+
 def browse_folder_dialog(initial: str) -> str:
     """Windows folder picker in its own STA PowerShell process; '' when cancelled."""
     script = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
@@ -721,7 +761,8 @@ def public_task() -> dict | None:
     with TASK_LOCK:
         if TASK is None:
             return None
-        return {key: TASK[key] for key in ("id", "action", "status", "startedAt", "endedAt", "returnCode", "logs")}
+        return {key: TASK[key] for key in ("id", "action", "status", "startedAt", "endedAt", "returnCode", "logs", "model")
+                if key in TASK}
 
 
 def _redact(text: str) -> str:
@@ -731,7 +772,7 @@ def _redact(text: str) -> str:
     return text[:2400]
 
 
-def _run_task(task_id: str, command: list[str]) -> None:
+def _run_task(task_id: str, command: list[str], extra_env: dict[str, str] | None = None) -> None:
     global TASK
     with TASK_LOCK:
         if TASK is None or TASK["id"] != task_id:
@@ -741,6 +782,7 @@ def _run_task(task_id: str, command: list[str]) -> None:
     try:
         env = os.environ.copy()
         env.update(PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        env.update(extra_env or {})
         process = subprocess.Popen([sys.executable, "-u", *command], cwd=str(ROOT), env=env,
                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, encoding="utf-8",
@@ -786,6 +828,7 @@ def start_task(payload: dict) -> tuple[dict, int]:
     if action not in TASK_ALLOWED:
         return {"error": "Unsupported task action"}, 400
     command: list[str]
+    extra_env: dict[str, str] = {}
     if action == "screen":
         command = ["run_email_jobs.py", "--screen-only"]
     elif action == "extract":
@@ -819,6 +862,12 @@ def start_task(payload: dict) -> tuple[dict, int]:
             if master is None:
                 return {"error": "Put your master resume in the project folder as Resume_<Name>.docx"}, 409
             command += ["--chunk-tailored", "--master-resume", master.name]
+            # The picker's choice for this run, else the saved setting.
+            try:
+                model = validate_model(payload["model"]) if "model" in payload else get_writer_model()
+            except ValueError as exc:
+                return {"error": str(exc)}, 400
+            extra_env["JOB_AGENT_WRITER_MODEL"] = model
         elif engine != "profile":
             return {"error": "Unknown resume engine"}, 400
         elif payload.get("profileSource", "json") == "json":
@@ -842,8 +891,9 @@ def start_task(payload: dict) -> tuple[dict, int]:
             return {"error": "Another task is already running. Wait for it to finish."}, 409
         task_id = secrets.token_urlsafe(16)
         TASK = {"id": task_id, "action": action, "status": "queued", "startedAt": time.time(),
-                "endedAt": None, "returnCode": None, "logs": []}
-        threading.Thread(target=_run_task, args=(task_id, command), daemon=True).start()
+                "endedAt": None, "returnCode": None, "logs": [],
+                **({"model": extra_env["JOB_AGENT_WRITER_MODEL"]} if "JOB_AGENT_WRITER_MODEL" in extra_env else {})}
+        threading.Thread(target=_run_task, args=(task_id, command, extra_env), daemon=True).start()
         return public_task(), 202
 
 
@@ -864,6 +914,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(master_overview())
         if path == "/api/save-folder":
             return self.send_json({"folder": get_save_folder(), "canBrowse": BROWSE_FOLDER is not None})
+        if path == "/api/writer-model":
+            return self.send_json(writer_model_overview())
         if path == "/api/tracker":
             return self.send_json({"applications": read_tracker()})
         if path == "/api/schedule":
@@ -931,7 +983,8 @@ class Handler(BaseHTTPRequestHandler):
         upload = re.fullmatch(r"/api/resumes/([0-9]{1,18})/upload", path)
         save_copy = re.fullmatch(r"/api/resumes/([0-9]{1,18})/([0-9]{1,3})/save", path)
         if path not in {"/api/tasks", "/api/profile", "/api/tracker", "/api/schedule", "/api/master/open",
-                        "/api/save-folder", "/api/save-folder/browse", "/api/save-folder/open"} and not upload and not save_copy:
+                        "/api/save-folder", "/api/save-folder/browse", "/api/save-folder/open",
+                        "/api/writer-model"} and not upload and not save_copy:
             return self.send_json({"error": "Not found"}, 404)
         if upload:
             if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -968,6 +1021,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/save-folder":
             try:
                 return self.send_json({"folder": set_save_folder(payload.get("folder"))})
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
+        if path == "/api/writer-model":
+            try:
+                set_writer_model(payload.get("model"))
+                return self.send_json(writer_model_overview())
             except ValueError as exc:
                 return self.send_json({"error": str(exc)}, 400)
         if path == "/api/save-folder/browse":

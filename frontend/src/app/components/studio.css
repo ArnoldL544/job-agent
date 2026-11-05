@@ -163,3 +163,7 @@
   .studio-form{grid-template-columns:1fr}
   .studio-form label:nth-child(3){grid-column:auto}
 }
+.model-picker{display:flex;flex-direction:column;gap:8px}
+.model-custom{display:flex;gap:10px;flex-wrap:wrap}
+.model-custom input{flex:1 1 220px;min-width:0;background:#0c1827;color:#eaf3fc;border:1px solid rgba(146,177,204,.25);padding:.7rem .8rem;border-radius:9px;font:inherit}
+.model-note{margin:0;font-size:12.5px}

@@ -257,6 +257,9 @@ def write_draft(row: dict, state: dict, *, force: bool, allow_risk: bool, yes: b
 def chunk_fingerprint(jd_file: Path, master_file: Path) -> str:
     """Invalidate stale drafts when JD, master or chunk code changes."""
     digest = hashlib.sha256(b'chunk-tailored-v03\n')
+    # A different writer model is a different draft, not a duplicate.
+    from resume_chunk_writer import MODEL as writer_model
+    digest.update(f'model={writer_model}\n'.encode('utf-8'))
     for source in (jd_file, master_file, ROOT / 'resume_chunks.py',
                    ROOT / 'resume_selector.py', ROOT / 'resume_chunk_writer.py',
                    ROOT / 'resume_writer.py'):
@@ -303,6 +306,8 @@ def write_chunk_tailored(row: dict, *, master_path: Path, force: bool,
         return f'SKIP {jid}: 相同输入已经生成过 Chunk+AI 审核稿；如需重做加 --force'
     print(f'\nChunk + OpenAI Word 审核草稿：{row.get("company", "")} — {row.get("title", "")}')
     print('不会申请岗位；姓名/教育/职位/日期/Skills 使用原始 Master 原文。')
+    from resume_chunk_writer import MODEL as writer_model
+    print(f'写作模型：{writer_model}')
     for note in eligibility_notes(row) + blocked:
         print('  资格/招聘状态仍待核实：' + str(note))
     if not yes:

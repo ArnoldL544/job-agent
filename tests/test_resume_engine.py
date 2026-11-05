@@ -31,7 +31,9 @@ class ResumeEngineTests(unittest.TestCase):
         api.HISTORY_FILE = api.ROOT / 'task_history.json'
         api.TRACKER_FILE = api.ROOT / 'application_tracker.json'
         api.SCHEDULE_FILE = api.ROOT / 'discovery_schedule.json'
-        (api.ROOT / 'run_screened_resumes.py').write_text('import sys\nprint("ARGS", sys.argv[1:])\n', encoding='utf-8')
+        (api.ROOT / 'run_screened_resumes.py').write_text(
+            'import os, sys\nprint("ARGS", sys.argv[1:])\nprint("MODEL", os.environ.get("JOB_AGENT_WRITER_MODEL", "-"))\n',
+            encoding='utf-8')
         (api.JOBS / 'job_screen_results.json').write_text(
             json.dumps([{'job_id': '12345', 'priority': '高匹配·优先核实', 'company': 'Acme', 'title': 'SWE Intern'}]),
             encoding='utf-8')
@@ -167,6 +169,36 @@ class ResumeEngineTests(unittest.TestCase):
         self.assertIn("filename*=UTF-8''SWE%20Intern_resume.docx", disposition)
         entry = next(e for e in api.resume_entries() if e['filename'] == docx.name)
         self.assertEqual(entry['downloadName'], 'SWE Intern_resume.docx')
+
+    def test_writer_model_setting_reaches_the_writer(self):
+        self.addCleanup(lambda: api.settings_file().unlink(missing_ok=True))
+        (api.ROOT / 'Resume_Test User.docx').write_bytes(b'PK\x03\x04FAKE')
+        self.addCleanup(lambda: (api.ROOT / 'Resume_Test User.docx').unlink(missing_ok=True))
+        model_line = lambda task: next(ln for ln in task['logs'] if ln.startswith('MODEL'))
+        base = {'action': 'resume', 'jobId': '12345', 'confirmPaid': True}
+        # Default until the user picks one.
+        self.assertEqual(api.writer_model_overview()['model'], 'gpt-5.4')
+        self.assertEqual(self.status_of(base), 202)
+        self.assertEqual(model_line(self.wait()), 'MODEL gpt-5.4')
+        # Saved choice (a preset or any custom ID) is used by later runs.
+        self.assertEqual(self.status_of_path('/api/writer-model', {'model': 'gpt-5.4-mini'}), 200)
+        self.assertEqual(api.get_writer_model(), 'gpt-5.4-mini')
+        self.assertEqual(self.status_of(base), 202)
+        task = self.wait()
+        self.assertEqual(model_line(task), 'MODEL gpt-5.4-mini')
+        self.assertEqual(task['model'], 'gpt-5.4-mini')
+        # A per-run model overrides the saved one; bad IDs are rejected.
+        self.assertEqual(self.status_of(dict(base, model='my-custom.model:2')), 202)
+        self.assertEqual(model_line(self.wait()), 'MODEL my-custom.model:2')
+        for bad in ('', 'gpt 5', 'x' * 65, '-flag', 5, '../evil'):
+            self.assertEqual(self.status_of(dict(base, model=bad)), 400, bad)
+            self.assertEqual(self.status_of_path('/api/writer-model', {'model': bad}), 400, bad)
+        self.assertEqual(api.get_writer_model(), 'gpt-5.4-mini')
+        # The older profile writer does not get the setting.
+        self.assertEqual(self.status_of(dict(base, engine='profile', profileSource='legacy')), 202)
+        task = self.wait()
+        self.assertEqual(model_line(task), 'MODEL -')
+        self.assertNotIn('model', task)
 
     def test_save_folder_and_save_copy(self):
         target = Path(tempfile.mkdtemp())
