@@ -5,13 +5,15 @@ export const ACTION_HEADERS = { "Content-Type": "application/json", "X-Job-Agent
 
 export type Page = "overview" | "find" | "opportunities" | "details" | "resumes" | "profile";
 export type DataMode = "demo" | "local";
-export type Match = "High Match" | "Review" | "Verify Eligibility";
+export type Match = "High Match" | "Review" | "Verify Eligibility" | "Conflict";
 
 export type Job = {
   id: string; company: string; title: string; location: string; arrangement: string;
   score: number; match: Match; initials: string; color: string; skills: string[];
   summary: string; requirements: string[]; flags: string[];
   hasJd?: boolean; resumeCount?: number; priority?: string;
+  // Parsed from the saved JD by the local API (phase 2); absent in sample data.
+  pay?: string; schedule?: string; workAuth?: string; deadline?: string; deadlineDays?: number | null; reason?: string;
 };
 export type JobDetail = { jobId: string; hasJd: boolean; jdText: string; jdFilename: string | null; priority: string; screeningNotes: string[] };
 export type DraftKind = "tailored" | "profile" | "uploaded";
@@ -54,8 +56,25 @@ export function Icon({ name, size = 18, className = "" }: { name: IconName; size
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{glyphs[name]}</svg>;
 }
 
+const TAG_CLASS: Record<Match, string> = { "High Match": "tag-high", "Review": "tag-review", "Verify Eligibility": "tag-verify", "Conflict": "tag-conflict" };
 export function MatchTag({ status }: { status: Match }) {
-  return <span className={`match-tag ${status === "High Match" ? "tag-high" : status === "Review" ? "tag-review" : "tag-verify"}`}><span className="tag-dot"/>{status}</span>;
+  return <span className={`match-tag ${TAG_CLASS[status]}`}><span className="tag-dot"/>{status}</span>;
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function shortDate(iso: string) {
+  const [, m, d] = iso.split("-").map(Number);
+  return m && d ? `${MONTHS[m - 1]} ${d}` : iso;
+}
+// Days come from the API (computed on the server), so rendering never reads the clock.
+export function deadlineLabel(job: Job): { text: string; tone: "" | "soon" | "closed" } | null {
+  if (!job.deadline) return null;
+  const days = job.deadlineDays;
+  if (days === null || days === undefined) return { text: `Apply by ${shortDate(job.deadline)}`, tone: "" };
+  if (days < 0) return { text: `Closed ${shortDate(job.deadline)}`, tone: "closed" };
+  if (days === 0) return { text: "Due today", tone: "soon" };
+  if (days <= 7) return { text: `Due in ${days} day${days > 1 ? "s" : ""} · ${shortDate(job.deadline)}`, tone: "soon" };
+  return { text: `Apply by ${shortDate(job.deadline)}`, tone: "" };
 }
 
 export function CompanyMark({ job, size = "normal" }: { job: Job; size?: "normal" | "large" }) {
@@ -70,9 +89,19 @@ export function Score({ score }: { score: number }) {
 // supplies real values; show nothing rather than repeating a placeholder.
 const PLACEHOLDER = /not verified|verify job details/i;
 export function JobMeta({ job, size = 13 }: { job: Job; size?: number }) {
-  const parts = [job.location, job.arrangement].filter(v => v && !PLACEHOLDER.test(v));
+  const parts = [job.location, job.arrangement, job.pay].filter((v): v is string => !!v && !PLACEHOLDER.test(v));
   if (!parts.length) return null;
   return <div className="job-row-meta"><Icon name="pin" size={size}/>{parts.join(" · ")}</div>;
+}
+
+export function JobFacts({ job }: { job: Job }) {
+  const due = deadlineLabel(job);
+  if (!due && !job.workAuth && !job.reason) return null;
+  return <div className="job-facts">
+    {due && <span className={`deadline-chip ${due.tone ? `deadline-${due.tone}` : ""}`}>{due.text}</span>}
+    {job.workAuth && <span className="job-auth">{job.workAuth}</span>}
+    {job.reason && <span className="job-reason" title={job.reason}>{job.reason}</span>}
+  </div>;
 }
 
 export function JobRow({ job, saved, onOpen, onSave }: { job: Job; saved: boolean; onOpen: () => void; onSave: () => void }) {
@@ -82,6 +111,7 @@ export function JobRow({ job, saved, onOpen, onSave }: { job: Job; saved: boolea
       <div className="job-row-company">{job.company}</div>
       <button className="job-title-link" onClick={onOpen}>{job.title}<Icon name="chevron" size={15}/></button>
       <JobMeta job={job}/>
+      <JobFacts job={job}/>
     </div>
     <div className="job-row-score"><div className="tiny-label">MATCH SCORE</div><Score score={job.score}/></div>
     <div className="job-row-status"><MatchTag status={job.match}/></div>

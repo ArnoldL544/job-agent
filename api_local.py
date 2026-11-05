@@ -356,6 +356,66 @@ def resumes_for(jid: str) -> list[Path]:
     return sorted(safe.values(), key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+_GLANCE_END = re.compile(r"^(What they.re looking for|Job description)", re.I)
+_MONTH_DATE = r"([A-Z][a-z]+) \d{1,2}, (\d{4})"
+# Flags that appear on almost every job; they are not useful as a badge reason.
+_GENERIC_FLAGS = ("UR ISO", "截止不足或等于 7 天")
+_REASON_KEYS = ("冲突", "毕业", "截止日期已过", "地点", "境外", "签证")
+
+
+def jd_facts(text: str) -> dict:
+    """Key facts from a Handshake JD's header and "At a glance" block.
+
+    Handshake renders the block as one fact per line, e.g. "£28K/yr",
+    "Hybrid, based in Cambridge, United Kingdom", "Full-time∙From July 4, 2027
+    to June 30, 2028", "US work authorization required". Missing lines are skipped.
+    """
+    facts: dict = {}
+    applied = re.search(r"Apply by ([A-Z][a-z]+ \d{1,2}, \d{4})", text)
+    if applied:
+        try:
+            facts["deadline"] = datetime.strptime(applied.group(1), "%B %d, %Y").date().isoformat()
+        except ValueError:
+            pass
+    lines = [line.strip() for line in text.splitlines()]
+    if "At a glance" not in lines:
+        return facts
+    start = lines.index("At a glance") + 1
+    for line in lines[start:start + 15]:
+        if _GLANCE_END.match(line):
+            break
+        if not line:
+            continue
+        if "pay" not in facts and re.match(r"^([$£€¥]|Paid$|Unpaid)", line):
+            facts["pay"] = line[:60]
+        where = re.match(r"^(Remote or onsite|Remote|Onsite|Hybrid), based in (.+)$", line)
+        if where:
+            facts["workplace"], facts["location"] = where.group(1), where.group(2)[:120]
+        schedule = re.match(r"^(Full-time|Part-time)", line)
+        if schedule:
+            period = re.search(r"From " + _MONTH_DATE + r" to " + _MONTH_DATE, line)
+            facts["schedule"] = schedule.group(1) + (
+                f" · {period.group(1)[:3]} {period.group(2)} – {period.group(3)[:3]} {period.group(4)}" if period else "")
+        auth = re.match(r"^US work authorization (not required|required|requirements unknown)", line)
+        if auth:
+            facts["usAuth"] = {"not required": "not required", "required": "required"}.get(auth.group(1), "unknown")
+        if line.startswith("Eligible for visa sponsorship"):
+            facts["sponsorship"] = True
+        if "OPT/CPT" in line:
+            facts["optCpt"] = True
+    return facts
+
+
+def work_auth_label(facts: dict) -> str:
+    auth = facts.get("usAuth")
+    if auth == "not required":
+        return "US work authorization not required"
+    if auth == "required":
+        extra = " · sponsors visas" if facts.get("sponsorship") else " · OPT/CPT OK" if facts.get("optCpt") else ""
+        return "US work authorization required" + extra
+    return "Work authorization not stated" if auth == "unknown" else ""
+
+
 def normalize(row: dict) -> dict:
     jid = str(row["job_id"])
     company = str(row.get("company") or "Unknown company").strip()
@@ -363,14 +423,31 @@ def normalize(row: dict) -> dict:
     score = max(0, min(100, int(raw_score))) if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool) else 0
     priority = str(row.get("priority") or "")
     match = ("High Match" if priority == "高匹配·优先核实" else
-             "Verify Eligibility" if any(term in priority for term in ("地点限制", "冲突", "待核实", "暂缓")) else "Review")
+             "Conflict" if "冲突" in priority else
+             "Verify Eligibility" if any(term in priority for term in ("地点限制", "待核实", "暂缓")) else "Review")
     skills = row.get("matched_skills", [])
     keywords = row.get("jd_keywords", [])
     flags = row.get("flags", [])
     flags = [str(v)[:700] for v in flags[:25] if isinstance(v, (str, int, float))] if isinstance(flags, list) else []
+    specific = [f for f in flags if not any(g in f for g in _GENERIC_FLAGS)]
+    # The badge shows the flag that best explains the priority, most decisive first.
+    reason = next((f for key in _REASON_KEYS for f in specific if key in f), specific[0] if specific else "")
+    jd = jd_path(row)
+    try:
+        facts = jd_facts(jd.read_text(encoding="utf-8-sig", errors="replace")[:60000]) if jd else {}
+    except OSError:
+        facts = {}
+    deadline = str(row.get("deadline") or facts.get("deadline") or "")[:10]
+    try:
+        deadline_days = (date.fromisoformat(deadline) - date.today()).days if deadline else None
+    except ValueError:
+        deadline, deadline_days = "", None
     return {
         "id": jid, "company": company[:180], "title": str(row.get("title") or "Untitled position")[:200],
-        "location": "Location not verified", "arrangement": "Verify job details", "score": score,
+        "location": facts.get("location", "Location not verified"),
+        "arrangement": facts.get("workplace", "Verify job details"), "score": score,
+        "pay": facts.get("pay", ""), "schedule": facts.get("schedule", ""), "workAuth": work_auth_label(facts),
+        "deadline": deadline, "deadlineDays": deadline_days, "reason": reason[:300] if match != "High Match" else "",
         "match": match, "priority": priority[:150],
         "initials": "".join(s[0] for s in company.split()[:2]).upper() or "?",
         "color": COLORS[sum(ord(ch) for ch in company) % len(COLORS)],

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ApplicationTracker } from "../AgentExtras";
-import { CompanyMark, DataMode, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag } from "../../lib/shared";
+import { CompanyMark, DataMode, deadlineLabel, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; job: Job; others: Job[]; saved: boolean;
@@ -23,15 +23,29 @@ export default function JobDetailPage({ dataMode, job, others, saved, onBack, on
     return () => controller.abort();
   }, [local, job.id]);
   const current = loaded?.id === job.id ? loaded : null;
+  const due = deadlineLabel(job);
+  const known = (v?: string) => (v && !/not verified|verify job details/i.test(v) ? v : "");
+  const facts = ([
+    ["Location", known(job.location), ""],
+    ["Workplace", known(job.arrangement), ""],
+    ["Pay", job.pay ?? "", ""],
+    ["Schedule", job.schedule ?? "", ""],
+    ["Deadline", due?.text ?? "", due?.tone ?? ""],
+    ["Work authorization", job.workAuth ?? "", ""],
+  ] as [string, string, string][]).filter(([, value]) => value);
 
   return <>
     <button className="secondary-button product-back" onClick={onBack}><Icon name="chevron" size={15}/> Back to jobs</button>
     <div className="detail-layout">
       <section className="panel detail-primary">
         <div className="detail-header"><CompanyMark job={job} size="large"/><div className="detail-header-main">
-          <div className="job-row-company">{job.company} · {job.id}</div><h2>{job.title}</h2><JobMeta job={job} size={15}/>
+          <div className="job-row-company">{job.company} · {job.id}</div><h2>{job.title}</h2>{facts.length === 0 && <JobMeta job={job} size={15}/>}
         </div></div>
         <div className="detail-badges"><MatchTag status={job.match}/>{job.priority && <span className="skill-pill">{job.priority}</span>}</div>
+        {job.reason && <p className="detail-reason">{job.reason}</p>}
+        <dl className="detail-facts">
+          {facts.map(([label, value, tone]) => <div key={label}><dt>{label}</dt><dd className={tone ? `deadline-${tone}` : ""}>{value}</dd></div>)}
+        </dl>
         <div className="detail-divider"/>
         <h3>Screening notes</h3>
         <p className="detail-summary">{job.summary}</p>

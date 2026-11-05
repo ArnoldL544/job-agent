@@ -1,7 +1,6 @@
 "use client";
 
-import { DeadlineOverview } from "../AgentExtras";
-import { DataMode, Icon, Job, JobRow, ResumeRecord } from "../../lib/shared";
+import { DataMode, deadlineLabel, Icon, Job, JobRow, MatchTag, ResumeRecord } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; shortlisted: string[];
@@ -13,6 +12,9 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, onFindJ
   const local = dataMode === "local";
   const best = [...jobs].sort((a, b) => b.score - a.score).slice(0, 3);
   const highCount = jobs.filter(j => j.match === "High Match").length;
+  const closing = jobs
+    .filter(j => j.deadlineDays !== null && j.deadlineDays !== undefined && j.deadlineDays >= 0 && j.deadlineDays <= 7 && j.match !== "Conflict")
+    .sort((a, b) => (a.deadlineDays ?? 0) - (b.deadlineDays ?? 0) || b.score - a.score);
   // Latest draft per job, newest first.
   const latest: ResumeRecord[] = [];
   for (const r of [...resumes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))) {
@@ -33,7 +35,17 @@ export default function HomePage({ dataMode, jobs, resumes, shortlisted, onFindJ
         <button className="secondary-button" onClick={onJobs}><Icon name="briefcase" size={17}/> Browse jobs</button>
       </div>
     </div>
-    <DeadlineOverview enabled={local}/>
+    {local && <section className="panel closing-panel">
+      <div className="panel-header"><div><div className="panel-title">Closing soon</div><div className="panel-subtitle">Open jobs with a deadline in the next 7 days</div></div></div>
+      {closing.length ? <div className="closing-list">{closing.map(job => {
+        const due = deadlineLabel(job);
+        return <button key={job.id} className="closing-item" onClick={() => onOpenJob(job.id)}>
+          <span className={`deadline-chip deadline-${due?.tone || "soon"}`}>{due?.text}</span>
+          <span className="closing-title"><strong>{job.title}</strong><small>{job.company}</small></span>
+          <MatchTag status={job.match}/>
+        </button>;
+      })}</div> : <p className="stage4-muted">Nothing closes in the next 7 days.</p>}
+    </section>}
     <div className="metrics-grid">
       {metrics.map(m => <div className="metric-card" key={m.label}>
         <div className="metric-top"><span>{m.label}</span><span className={`metric-icon ${m.tone}`}><Icon name={m.icon} size={19}/></span></div>

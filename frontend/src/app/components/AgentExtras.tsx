@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import "./agent-extras.css";
 
 const API = "http://127.0.0.1:8765";
@@ -55,48 +55,6 @@ export function ApplicationTracker({jobId, enabled}:{jobId:string; enabled:boole
     {error && <p role="alert" className="ja-extra-error">{error}</p>}
     {saved && <p role="status" className="ja-extra-success">{saved}</p>}
     <button className="primary-button" onClick={save} disabled={busy}>{busy ? "Saving..." : "Save application"}</button>
-  </section>;
-}
-
-export function DeadlineOverview({enabled}:{enabled:boolean}) {
-  const [all, setAll] = useState<Applications>({});
-  const [error, setError] = useState("");
-  // Updated only after an effect fetch completes; never read the clock while rendering.
-  const [todayUtcDay, setTodayUtcDay] = useState<number | null>(null);
-  useEffect(()=>{
-    if (!enabled) return;
-    let active=true;
-    const refresh=()=>fetch(API + "/api/tracker", {cache:"no-store"})
-      .then(x=>x.ok?x.json() as Promise<{applications:Applications}>:Promise.reject())
-      .then(x=>{if(active){
-        setAll(x.applications || {});
-        const now = new Date();
-        setTodayUtcDay(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-        setError("");
-      }})
-      .catch(()=>{if(active)setError("Tracker unavailable");});
-    void refresh();
-    window.addEventListener("job-agent-tracker-updated",refresh);
-    return()=>{active=false;window.removeEventListener("job-agent-tracker-updated",refresh);};
-  },[enabled]);
-  const due = useMemo(()=>{
-    if (todayUtcDay === null) return [];
-    return Object.values(all).flatMap(x=>{
-      if (!x.deadline || ["Applied","Interview","Offer","Rejected","Withdrawn"].includes(x.status)) return [];
-      const [y,m,d]=x.deadline.split("-").map(Number);
-      // Compare calendar dates in UTC to avoid DST-related off-by-one errors.
-      const days=Math.round((Date.UTC(y,m-1,d)-todayUtcDay)/86400000);
-      return days<=7 ? [{...x,days}] : [];
-    }).sort((a,b)=>a.days-b.days);
-  },[all,todayUtcDay]);
-  if(!enabled) return null;
-  const open = due.filter(x=>x.days>=0);
-  return <section className="panel ja-extra-card ja-deadlines">
-    <div className="ja-extra-heading"><h3>Deadlines & applications</h3></div>
-    <p className="ja-extra-caption">{Object.values(all).filter(x=>x.status!=="Discovered").length} tracked applications · {open.length} approaching in 7 days</p>
-    {error && <p className="ja-extra-error">{error}</p>}
-    {due.length===0?<p className="ja-extra-caption">No upcoming deadlines entered. Open a job to set one.</p>:
-      <div className="ja-deadline-list">{due.slice(0,6).map(x=><div key={x.jobId}><strong>Job {x.jobId}</strong><span className={x.days<0?"ja-extra-error":""}>{x.days<0?`Overdue ${Math.abs(x.days)}d`:x.days===0?"Due today":`Due in ${x.days}d`} · {x.deadline}</span></div>)}</div>}
   </section>;
 }
 

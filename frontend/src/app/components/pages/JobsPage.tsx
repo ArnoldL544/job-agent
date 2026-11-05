@@ -8,15 +8,29 @@ type Props = { dataMode: DataMode; jobs: Job[]; shortlisted: string[]; onOpenJob
 export default function JobsPage({ dataMode, jobs, shortlisted, onOpenJob, onToggleSave }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All positions");
+  const [sort, setSort] = useState<"score" | "deadline">("score");
   const filtered = useMemo(() => jobs.filter(job => {
-    const needle = `${job.company} ${job.title} ${job.skills.join(" ")} ${job.location}`.toLowerCase();
-    return needle.includes(search.trim().toLowerCase())
-      && (filter === "All positions" || (filter === "Shortlisted" ? shortlisted.includes(job.id) : job.match === filter));
-  }).sort((a, b) => b.score - a.score), [search, filter, shortlisted, jobs]);
+    const needle = `${job.company} ${job.title} ${job.skills.join(" ")} ${job.location} ${job.pay ?? ""}`.toLowerCase();
+    const days = job.deadlineDays;
+    const keep = filter === "All positions" ? true
+      : filter === "Shortlisted" ? shortlisted.includes(job.id)
+      : filter === "Closing within 7 days" ? days !== null && days !== undefined && days >= 0 && days <= 7
+      : filter === "Hide closed" ? !(days !== null && days !== undefined && days < 0)
+      : job.match === filter;
+    return needle.includes(search.trim().toLowerCase()) && keep;
+  }).sort((a, b) => {
+    if (sort === "deadline") {
+      // Open jobs by soonest deadline, then unknown deadlines, then closed jobs.
+      const rank = (j: Job) => j.deadlineDays === null || j.deadlineDays === undefined ? 1e6 : j.deadlineDays < 0 ? 2e6 - j.deadlineDays : j.deadlineDays;
+      return rank(a) - rank(b) || b.score - a.score;
+    }
+    return b.score - a.score;
+  }), [search, filter, sort, shortlisted, jobs]);
   return <section className="panel opportunities-panel">
     <div className="toolbar">
       <label className="search-field"><Icon name="search" size={18}/><input placeholder="Search roles, companies, skills..." value={search} onChange={e => setSearch(e.target.value)}/></label>
-      <label className="select-field"><Icon name="filter" size={17}/><select value={filter} onChange={e => setFilter(e.target.value)} aria-label="Filter positions"><option>All positions</option><option>High Match</option><option>Review</option><option>Verify Eligibility</option><option>Shortlisted</option></select></label>
+      <label className="select-field"><Icon name="filter" size={17}/><select value={filter} onChange={e => setFilter(e.target.value)} aria-label="Filter positions"><option>All positions</option><option>High Match</option><option>Verify Eligibility</option><option>Conflict</option><option>Review</option><option>Closing within 7 days</option><option>Hide closed</option><option>Shortlisted</option></select></label>
+      <label className="select-field"><select value={sort} onChange={e => setSort(e.target.value as "score" | "deadline")} aria-label="Sort positions"><option value="score">Best match first</option><option value="deadline">Deadline soonest</option></select></label>
       <span className="neutral-chip">{filtered.length} of {jobs.length}</span>
     </div>
     <div className="job-list detailed-list">{filtered.length
