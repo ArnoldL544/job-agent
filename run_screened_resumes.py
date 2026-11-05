@@ -339,43 +339,6 @@ def write_chunk_tailored(row: dict, *, master_path: Path, force: bool,
             f'请人工核对。')
 
 
-def write_chunk_preview(row: dict, *, master_path: Path) -> str:
-    """Offline option: use VERIFIED Handshake JD path + master DOCX chunks.
-
-    Writes only to chunk_output/handshake/. Does not call APIs, submit jobs,
-    mutate resume_draft_state, or modify the existing resume_generator flow.
-    """
-    jd_path = find_jd(row)
-    jid = str(row['job_id'])
-    if not jd_path:
-        return f"SKIP {jid}: 未找到安全的 Handshake JD 文件"
-    if not master_path.is_file():
-        return f"FAILED {jid}: Master Resume 不存在：{master_path}"
-    jd_text = jd_path.read_text(encoding='utf-8-sig', errors='replace').strip()
-    if len(jd_text) < 15:
-        return f"FAILED {jid}: JD 内容为空或过短"
-    # Imports intentionally delayed: original --list and LLM mode are untouched.
-    from resume_chunks import parse_docx
-    from resume_selector import select_chunks, export_report, render_selected_docx
-    master = parse_docx(master_path)
-    chosen = select_chunks(master, jd_text)
-    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-    output = ROOT / 'chunk_output' / 'handshake' / f'{jid}_{stamp}'
-    output.mkdir(parents=True, exist_ok=False)
-    (output / 'master_chunks.json').write_text(json.dumps(master, ensure_ascii=False, indent=2), encoding='utf-8')
-    (output / 'selection.json').write_text(json.dumps(chosen, ensure_ascii=False, indent=2), encoding='utf-8')
-    export_report(chosen, output / 'selection_review.md')
-    render_selected_docx(master_path, master, chosen, output / 'selected_resume_preview.docx')
-    print('离线 Chunk 预览：不调用 OpenAI，不自动投递，也不修改原始简历。')
-    for warning in restrictions(row) + eligibility_notes(row):
-        print('  申请资格/招聘状态待核实：' + warning)
-    if chosen['required_not_evidenced_in_resume']:
-        print('  JD 要求但简历未明确体现：' + ', '.join(chosen['required_not_evidenced_in_resume']))
-    counts = {entry['title']: entry['selected_bullets'] for entry in chosen['entries'] if entry['selected']}
-    print('  选中 Bullet 数量：' + json.dumps(counts, ensure_ascii=False))
-    return f"SUCCESS {jid}: Chunk 预览及报告已保存：{output}"
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="将已筛选 Handshake JD 转为逐岗审核简历")
     parser.add_argument("--list", action="store_true", help="只列出职位（默认行为）")
@@ -385,12 +348,9 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="重生成相同输入的简历草稿")
     parser.add_argument("--profile-source", choices=("legacy", "json"), default="legacy", help="Use legacy profile.txt or the saved My Profile data (json)")
     parser.add_argument("--max-drafts", type=int, default=1, help="单次最多尝试生成多少份（默认 1）")
-    parser.add_argument("--chunk-preview", action="store_true", help="离线使用 Master Resume 和真实 Handshake JD 选择 Chunk；不会调用 OpenAI")
     parser.add_argument("--chunk-tailored", action="store_true", help="显式启用 Chunk Selection + OpenAI Bullet polishing + Word 审核稿（需要确认）")
-    parser.add_argument("--master-resume", default="Resume_Arnold Li.docx", help="Chunk 预览使用的 Master DOCX，默认项目根目录的 Resume_Arnold Li.docx")
+    parser.add_argument("--master-resume", default="Resume_Arnold Li.docx", help="Chunk 草稿使用的 Master DOCX，默认项目根目录的 Resume_Arnold Li.docx（离线预览请用 chunk_v05_preview.py）")
     args = parser.parse_args()
-    if args.chunk_tailored and args.chunk_preview:
-        parser.error("--chunk-tailored 和 --chunk-preview 不能同时使用")
     if args.max_drafts < 1:
         parser.error("--max-drafts 必须 >= 1")
     rows = load_report()
@@ -410,16 +370,12 @@ def main() -> int:
             errors += 1
             continue
         try:
-            if args.chunk_preview or args.chunk_tailored:
-                # Mode is explicit. Offline preview stays free and read-only.
+            if args.chunk_tailored:
                 path = Path(args.master_resume)
                 if not path.is_absolute():
                     path = ROOT / path
-                if args.chunk_preview:
-                    result = write_chunk_preview(lookup[jid], master_path=path.resolve())
-                else:
-                    result = write_chunk_tailored(lookup[jid], master_path=path.resolve(),
-                        force=args.force, allow_risk=args.allow_risk, yes=args.yes)
+                result = write_chunk_tailored(lookup[jid], master_path=path.resolve(),
+                    force=args.force, allow_risk=args.allow_risk, yes=args.yes)
             else:
                 result = write_draft(lookup[jid], state, force=args.force,
                                      allow_risk=args.allow_risk, yes=args.yes, profile_source=args.profile_source)

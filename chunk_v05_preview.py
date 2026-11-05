@@ -2,7 +2,7 @@
 
 Usage (project root):
     python chunk_v05_preview.py --job-id 11651900
-    python chunk_v05_preview.py --jd-file sample_jds\\frontend.txt
+    python chunk_v05_preview.py --jd-file sample_jds\\tessera_fullstack_example.txt
     python chunk_v05_preview.py --job-id 11651900 --no-page-check
 
 Writes chunk_output/v05_preview/<name>_<time>_preview.docx and _report.md.
