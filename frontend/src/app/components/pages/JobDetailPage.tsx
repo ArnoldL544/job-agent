@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ApplicationTracker } from "../AgentExtras";
-import { CompanyMark, DataMode, deadlineLabel, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag } from "../../lib/shared";
+import { CompanyMark, DataMode, deadlineLabel, Icon, Job, JobDetail, JobMeta, LOCAL_API, MatchTag, PostingLink } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; job: Job; others: Job[]; saved: boolean;
@@ -67,6 +67,7 @@ export default function JobDetailPage({ dataMode, job, others, saved, onBack, on
           <div className="score-track"><div style={{ width: `${job.score}%` }}/></div>
           <p>Rule-based score, not a hiring prediction.</p>
           <button className="primary-button" onClick={onTailor}><Icon name="sparkles" size={17}/> Tailor resume for this job</button>
+          <PostingLink job={job} label="Open job posting to apply"/>
           <button className={`secondary-button full-button ${saved ? "button-saved" : ""}`} onClick={onToggleSave}><Icon name="bookmark" size={17}/>{saved ? "Remove from shortlist" : "Add to shortlist"}</button>
         </section>
         <ApplicationTracker jobId={job.id} enabled={local}/>

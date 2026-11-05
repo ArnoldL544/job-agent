@@ -14,6 +14,7 @@ export type Job = {
   hasJd?: boolean; resumeCount?: number; priority?: string;
   // Parsed from the saved JD by the local API (phase 2); absent in sample data.
   pay?: string; schedule?: string; workAuth?: string; deadline?: string; deadlineDays?: number | null; reason?: string;
+  url?: string;  // https link to the posting (Handshake), checked by the API
 };
 export type JobDetail = { jobId: string; hasJd: boolean; jdText: string; jdFilename: string | null; priority: string; screeningNotes: string[] };
 export type DraftKind = "tailored" | "profile" | "uploaded";
@@ -29,7 +30,7 @@ export type StartTask = (payload: Record<string, unknown>) => void;
 
 type IconName =
   | "grid" | "briefcase" | "file" | "layers" | "search" | "chevron" | "arrow" | "check"
-  | "sparkles" | "filter" | "pin" | "bookmark" | "bolt" | "mail" | "menu" | "x" | "info" | "download";
+  | "sparkles" | "filter" | "pin" | "bookmark" | "bolt" | "mail" | "menu" | "x" | "info" | "download" | "external";
 
 const glyphs: Record<IconName, ReactNode> = {
   grid: <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
@@ -50,7 +51,17 @@ const glyphs: Record<IconName, ReactNode> = {
   x: <path d="M5 5l14 14M19 5 5 19"/>,
   info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
   download: <><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></>,
+  external: <><path d="M12 5h7v7M19 5l-9 9"/><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></>,
 };
+
+// Opens the posting in a new tab; only https links from the API are rendered.
+export function PostingLink({ job, label }: { job: Job; label?: string }) {
+  if (!job.url || !job.url.startsWith("https://")) return null;
+  return <a className={label ? "secondary-button full-button posting-link" : "icon-button posting-icon"} href={job.url} target="_blank" rel="noopener noreferrer"
+    title="Open the job posting to apply" aria-label={`Open the ${job.title} posting`}>
+    <Icon name="external" size={label ? 17 : 18}/>{label}
+  </a>;
+}
 
 export function Icon({ name, size = 18, className = "" }: { name: IconName; size?: number; className?: string }) {
   return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{glyphs[name]}</svg>;
@@ -115,6 +126,7 @@ export function JobRow({ job, saved, onOpen, onSave }: { job: Job; saved: boolea
     </div>
     <div className="job-row-score"><div className="tiny-label">MATCH SCORE</div><Score score={job.score}/></div>
     <div className="job-row-status"><MatchTag status={job.match}/></div>
+    <PostingLink job={job}/>
     <button className={`icon-button save-button ${saved ? "saved" : ""}`} onClick={onSave} aria-label={`${saved ? "Remove" : "Add"} ${job.title} ${saved ? "from" : "to"} shortlist`} title={saved ? "Remove from shortlist" : "Add to shortlist"}><Icon name="bookmark" size={19}/></button>
   </div>;
 }

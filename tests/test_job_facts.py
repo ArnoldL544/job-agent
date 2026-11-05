@@ -65,6 +65,18 @@ class JdFactsTests(unittest.TestCase):
         self.assertEqual(api.work_auth_label({'usAuth': 'required', 'optCpt': True}), 'US work authorization required · OPT/CPT OK')
 
 
+class JobUrlTests(unittest.TestCase):
+    def test_https_from_screening_or_jd_source_line(self):
+        self.assertEqual(api.job_url({'url': 'https://rochester.joinhandshake.com/job-search/1'}),
+                         'https://rochester.joinhandshake.com/job-search/1')
+        self.assertEqual(api.job_url({}, UK_JD), 'https://example.joinhandshake.com/job-search/1')
+
+    def test_unsafe_or_missing_links_are_dropped(self):
+        for bad in ('javascript:alert(1)', 'http://example.com/job', 'data:text/html,hi', '', None, 42):
+            with self.subTest(bad=bad):
+                self.assertEqual(api.job_url({'url': bad}), '')
+
+
 class NormalizeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -94,6 +106,7 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(job['deadline'], soon)
         self.assertEqual(job['deadlineDays'], 3)
         self.assertEqual(job['reason'], '')  # high matches show no warning line
+        self.assertEqual(job['url'], 'https://example.joinhandshake.com/job-search/1')  # from the JD 来源 line
 
     def test_conflict_badge_and_specific_reason(self):
         flags = ['若在美国境内实习，需向 UR ISO 核实 CPT/OPT 等适用工作授权',

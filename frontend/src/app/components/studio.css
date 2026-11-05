@@ -75,6 +75,12 @@
 .detail-facts dt{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:#7d92a7;margin-bottom:4px}
 .detail-facts dd{margin:0;font-size:13px;color:#e3edf8;line-height:1.45;overflow-wrap:anywhere}
 
+/* Job posting links */
+.posting-icon{flex-shrink:0;color:#8da3b6}
+.posting-icon:hover{color:#3bdebd;border-color:#2c5b55}
+.posting-link{gap:8px;justify-content:center;margin-top:10px}
+@media(max-width:580px){.job-row>.posting-icon{margin-left:auto}.job-row>.posting-icon+.save-button{margin-left:0}}
+
 /* Phase 3: master resume page */
 .master{display:flex;flex-direction:column;gap:18px}
 .master-file{padding:20px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}

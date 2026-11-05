@@ -406,6 +406,20 @@ def jd_facts(text: str) -> dict:
     return facts
 
 
+def job_url(row: dict, jd_text: str = "") -> str:
+    """The posting's https link (from screening, else the JD's 来源 line); never other schemes."""
+    candidates = [row.get("url")]
+    source = re.search(r"来源：\s*(\S+)", jd_text[:500])
+    if source:
+        candidates.append(source.group(1))
+    for value in candidates:
+        if isinstance(value, str):
+            parts = urlsplit(value.strip())
+            if parts.scheme == "https" and parts.netloc and len(value) <= 500:
+                return value.strip()
+    return ""
+
+
 def work_auth_label(facts: dict) -> str:
     auth = facts.get("usAuth")
     if auth == "not required":
@@ -434,9 +448,10 @@ def normalize(row: dict) -> dict:
     reason = next((f for key in _REASON_KEYS for f in specific if key in f), specific[0] if specific else "")
     jd = jd_path(row)
     try:
-        facts = jd_facts(jd.read_text(encoding="utf-8-sig", errors="replace")[:60000]) if jd else {}
+        jd_text = jd.read_text(encoding="utf-8-sig", errors="replace")[:60000] if jd else ""
     except OSError:
-        facts = {}
+        jd_text = ""
+    facts = jd_facts(jd_text)
     deadline = str(row.get("deadline") or facts.get("deadline") or "")[:10]
     try:
         deadline_days = (date.fromisoformat(deadline) - date.today()).days if deadline else None
@@ -447,6 +462,7 @@ def normalize(row: dict) -> dict:
         "location": facts.get("location", "Location not verified"),
         "arrangement": facts.get("workplace", "Verify job details"), "score": score,
         "pay": facts.get("pay", ""), "schedule": facts.get("schedule", ""), "workAuth": work_auth_label(facts),
+        "url": job_url(row, jd_text),
         "deadline": deadline, "deadlineDays": deadline_days, "reason": reason[:300] if match != "High Match" else "",
         "match": match, "priority": priority[:150],
         "initials": "".join(s[0] for s in company.split()[:2]).upper() or "?",
