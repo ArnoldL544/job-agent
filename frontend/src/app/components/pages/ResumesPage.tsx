@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ACTION_HEADERS, DataMode, DraftKind, Icon, Job, LOCAL_API, LocalTask, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
+import { ACTION_HEADERS, DataMode, DraftKind, Icon, Job, LOCAL_API, LocalTask, PostingLink, ResumePreview, ResumeRecord, StartTask, TaskMonitor } from "../../lib/shared";
 
 type Props = {
   dataMode: DataMode; jobs: Job[]; resumes: ResumeRecord[]; resumesError: string;
@@ -93,11 +93,18 @@ export default function ResumesPage(props: Props) {
       <div className="studio-grid">
         <nav className="panel studio-list" aria-label="Drafts by job">
           <div className="panel-title">Drafts by job</div>
-          {groups.map(g => <button key={g.jobId} className={`studio-item ${g.jobId === group.jobId ? "active" : ""}`} onClick={() => { setActiveJob(g.jobId); setActiveVersion(""); }}>
-            <strong>{g.title}</strong>
-            <span>{g.company}</span>
-            <small>{g.versions.length} version{g.versions.length > 1 ? "s" : ""} · {new Date(g.versions[0].updatedAt).toLocaleDateString()}</small>
-          </button>)}
+          {groups.map(g => {
+            const job = jobs.find(j => j.id === g.jobId);
+            // A link cannot sit inside the <button>, so it is a sibling placed over the item's corner.
+            return <div key={g.jobId} className="studio-item-wrap">
+              <button className={`studio-item ${g.jobId === group.jobId ? "active" : ""} ${job?.url ? "has-apply" : ""}`} onClick={() => { setActiveJob(g.jobId); setActiveVersion(""); }}>
+                <strong>{g.title}</strong>
+                <span>{g.company}</span>
+                <small>{g.versions.length} version{g.versions.length > 1 ? "s" : ""} · {new Date(g.versions[0].updatedAt).toLocaleDateString()}</small>
+              </button>
+              {job && <PostingLink job={job}/>}
+            </div>;
+          })}
         </nav>
         {version && <DraftView key={version.id} group={group} version={version} onVersion={setActiveVersion} onUploaded={onRefresh}
           saveConfig={saveConfig} onSaveConfig={setSaveConfig}/>}
