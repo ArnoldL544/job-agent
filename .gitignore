@@ -9,6 +9,9 @@ browser_session/APIkey.env
 credentials*.json
 client_secret*.json
 token*.json
+*.env
+*.pem
+*.key
 browser_session/
 /jobs/
 /results/
@@ -18,6 +21,9 @@ browser_session/
 /local_settings.json
 /.local_settings_*.tmp
 /Resume_*.docx
+# Any Word/PDF in the project root is personal (resumes, cover letters, notes).
+/*.docx
+/*.pdf
 profile.txt
 resume_details.txt
 resume-template.docx
