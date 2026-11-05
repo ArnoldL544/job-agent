@@ -75,6 +75,26 @@
 .detail-facts dt{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:#7d92a7;margin-bottom:4px}
 .detail-facts dd{margin:0;font-size:13px;color:#e3edf8;line-height:1.45;overflow-wrap:anywhere}
 
+/* Phase 3: master resume page */
+.master{display:flex;flex-direction:column;gap:18px}
+.master-file{padding:20px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.master-notice{flex-basis:100%;margin:0}
+.master-section{padding:22px 24px;display:flex;flex-direction:column;gap:12px}
+.master-section p{margin:0}
+.master-q-section{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:#7d92a7!important}
+.master-q-jobs{font-weight:400;color:#7d92a7}
+.master-entries{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.master-entry{background:#0e1a29;border:1px solid var(--line);border-radius:10px;padding:13px 15px;min-width:0}
+.master-entry-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.master-entry-head strong{font-size:13.5px}
+.master-entry ul{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+.master-entry li{font-size:12.5px;line-height:1.5;color:#c9d8e8}
+.master-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.master-columns h3{font-size:14px;margin:6px 0 8px}
+.master-columns p{margin:0 0 4px}
+.master-legacy{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0}
+@media (max-width:900px){.master-columns{grid-template-columns:1fr}}
+
 /* Home: closing soon */
 .closing-panel{margin-bottom:18px}
 .closing-list{display:flex;flex-direction:column;gap:6px;padding:0 23px 22px}

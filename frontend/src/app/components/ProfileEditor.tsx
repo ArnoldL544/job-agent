@@ -143,7 +143,7 @@ export default function ProfileEditor({ dataMode }: { dataMode: "local" | "demo"
       <span className="product-status-dot" aria-hidden="true" />
       <div>
         <strong>{local ? "Where this profile is used" : "Read-only demo mode"}</strong>
-        <p>{local ? "Tailored drafts are written from your master resume (Resume_<Name>.docx). This profile is used only when you choose “Write from: My Profile page” on the Resumes page. Saved locally in profile_data.json." : "The public demo does not accept or save personal information."}</p>
+        <p>{local ? "Tailored drafts are built from your master resume. This form is used only by the older writer (Resumes → Options → “Use the older My Profile writer”). Saved locally in profile_data.json." : "The public demo does not accept or save personal information."}</p>
       </div>
     </div>
 

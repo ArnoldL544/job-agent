@@ -6,6 +6,7 @@ import FindJobsPage from "./components/pages/FindJobsPage";
 import HomePage from "./components/pages/HomePage";
 import JobDetailPage from "./components/pages/JobDetailPage";
 import JobsPage from "./components/pages/JobsPage";
+import MasterResumePage from "./components/pages/MasterResumePage";
 import ResumesPage from "./components/pages/ResumesPage";
 import "./components/studio.css";
 import { ACTION_HEADERS, DataMode, Icon, Job, LOCAL_API, LocalTask, Page, ResumeRecord } from "./lib/shared";
@@ -28,7 +29,7 @@ const MENU: { id: Page; label: string; icon: "grid" | "mail" | "briefcase" | "fi
   { id: "find", label: "Find Jobs", icon: "mail" },
   { id: "opportunities", label: "Jobs", icon: "briefcase" },
   { id: "resumes", label: "Resumes", icon: "file" },
-  { id: "profile", label: "My Profile", icon: "layers" },
+  { id: "master", label: "Master Resume", icon: "layers" },
 ];
 const TITLES: Record<Page, { title: string; subtitle: string }> = {
   overview: { title: "Your career workspace", subtitle: "New jobs, deadlines and drafts at a glance." },
@@ -36,7 +37,8 @@ const TITLES: Record<Page, { title: string; subtitle: string }> = {
   opportunities: { title: "Jobs", subtitle: "Every saved job, ranked by match score." },
   details: { title: "Job details", subtitle: "Read the job, track your application, tailor a resume." },
   resumes: { title: "Resumes", subtitle: "Generate tailored drafts and review what changed." },
-  profile: { title: "My Profile", subtitle: "Background used when you write a draft from My Profile." },
+  master: { title: "Master resume", subtitle: "The one resume every tailored draft is built from." },
+  profile: { title: "My Profile (older)", subtitle: "Used only by the older “Write from My Profile” option." },
 };
 
 export default function Home() {
@@ -141,7 +143,7 @@ export default function Home() {
       .catch(() => setShortlisted(prev => saved ? prev.filter(x => x !== id) : [...prev, id]));
   }
   const selected = jobs.find(j => j.id === selectedId) ?? jobs[0];
-  const activeMenu = page === "details" ? "opportunities" : page;
+  const activeMenu = page === "details" ? "opportunities" : page === "profile" ? "master" : page;
   const hero = TITLES[page];
 
   return <div className="app-shell">
@@ -154,7 +156,7 @@ export default function Home() {
     </aside>
 
     <main className="main-content">
-      <header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Icon name="menu" size={20}/></button><span className="breadcrumb-active">{page === "details" ? `Jobs / ${selected.company}` : MENU.find(x => x.id === page)?.label}</span></div></header>
+      <header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Icon name="menu" size={20}/></button><span className="breadcrumb-active">{page === "details" ? `Jobs / ${selected.company}` : page === "profile" ? "Master Resume / My Profile" : MENU.find(x => x.id === page)?.label}</span></div></header>
       <div className="page-content">
         <div className="page-heading"><div><h1>{hero.title}<span className="title-accent">.</span></h1><p>{hero.subtitle}</p></div></div>
         {!local && <div className="demo-notice"><Icon name="info" size={18}/><span><strong>Sample data.</strong> The local API is not running, so the companies and scores shown are fictional. Start the app with start.bat to see your own jobs.</span></div>}
@@ -169,7 +171,11 @@ export default function Home() {
         {page === "resumes" && <ResumesPage dataMode={dataMode} jobs={jobs} resumes={resumes} resumesError={resumesError}
           draftJobId={draftJobId} setDraftJobId={setDraftJobId} task={task} taskError={taskError} taskBusy={taskBusy}
           startTask={startTask} onRefresh={() => setRefresh(v => v + 1)}/>}
-        {page === "profile" && <ProfileEditor dataMode={dataMode}/>}
+        {page === "master" && <MasterResumePage dataMode={dataMode} onOpenProfileForm={() => navigate("profile")}/>}
+        {page === "profile" && <>
+          <button className="secondary-button product-back" onClick={() => navigate("master")}><Icon name="chevron" size={15}/> Back to master resume</button>
+          <ProfileEditor dataMode={dataMode}/>
+        </>}
       </div>
     </main>
   </div>;

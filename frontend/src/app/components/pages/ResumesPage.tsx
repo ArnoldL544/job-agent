@@ -53,28 +53,21 @@ export default function ResumesPage(props: Props) {
   return <div className="studio">
     <section className="panel studio-generate">
       <div className="panel-title">Tailor a resume</div>
-      <div className="studio-form">
-        <label className="stage5-field">Job
-          <select value={targetId} onChange={e => { setDraftJobId(e.target.value); setConfirmPaid(false); setAllowRisk(false); }}>
-            {jobs.map(job => <option key={job.id} value={job.id}>{job.company} — {job.title} ({job.score}/100)</option>)}
-          </select>
-        </label>
-        <label className="stage5-field">Write from
-          <select value={engine} onChange={e => setEngine(e.target.value as "chunk" | "profile")}>
-            <option value="chunk">My master resume (recommended)</option>
-            <option value="profile">My Profile page</option>
-          </select>
-        </label>
-        {engine === "profile" && <label className="stage5-field">Profile source
-          <select value={profileSource} onChange={e => setProfileSource(e.target.value as "json" | "legacy")}><option value="json">My Profile</option><option value="legacy">Legacy profile.txt</option></select>
-        </label>}
-      </div>
+      <label className="stage5-field">Job
+        <select value={targetId} onChange={e => { setDraftJobId(e.target.value); setConfirmPaid(false); setAllowRisk(false); }}>
+          {jobs.map(job => <option key={job.id} value={job.id}>{job.company} — {job.title} ({job.score}/100)</option>)}
+        </select>
+      </label>
       <p className="stage4-muted">{engine === "chunk"
-        ? "Picks and rewrites bullets from Resume_<Name>.docx for this job using only facts already in it, and keeps it to one page."
-        : "Writes a new draft from the entries saved on the My Profile page."}</p>
+        ? "Built from your master resume: picks the bullets that fit this job, rewrites them using only facts already in your resume, and keeps it to one page."
+        : "Older method: writes a new draft from the My Profile form."}</p>
       <details className="studio-options"><summary>Options</summary>
         <label className="stage5-check"><input type="checkbox" checked={allowRisk} onChange={e => setAllowRisk(e.target.checked)}/> Draft even if screening flagged eligibility or deadline issues</label>
         <label className="stage5-check"><input type="checkbox" checked={forceDraft} onChange={e => setForceDraft(e.target.checked)}/> Regenerate even if an identical draft exists</label>
+        <label className="stage5-check"><input type="checkbox" checked={engine === "profile"} onChange={e => setEngine(e.target.checked ? "profile" : "chunk")}/> Use the older My Profile writer instead of the master resume</label>
+        {engine === "profile" && <label className="stage5-field">Profile source
+          <select value={profileSource} onChange={e => setProfileSource(e.target.value as "json" | "legacy")}><option value="json">My Profile form</option><option value="legacy">Legacy profile.txt</option></select>
+        </label>}
       </details>
       <div className="studio-confirm">
         <label className="stage5-check"><input type="checkbox" checked={confirmPaid} onChange={e => setConfirmPaid(e.target.checked)}/> I approve one paid OpenAI call for this job.</label>
@@ -131,7 +124,7 @@ function DraftView({ group, version, onVersion, onUploaded }: { group: Group; ve
       <div className="studio-block"><h3>Make your master resume stronger</h3>
         {summary.questions.length ? <ul className="question-list">{summary.questions.map(q => <li key={q.question}><strong>{q.question}</strong><span>{q.bullet}</span></li>)}</ul>
           : <p className="stage4-muted">No questions this time.</p>}
-        <p className="stage4-muted">Add true answers to Resume_&lt;Name&gt;.docx; later drafts will use them.</p>
+        <p className="stage4-muted">Add true answers to your master resume; later drafts will use them. All open questions are collected on the Master Resume page.</p>
       </div>
       <div className="studio-block"><h3>What changed</h3>
         {summary.changes.length ? summary.changes.map((c, i) => <div className="change-item" key={i}>

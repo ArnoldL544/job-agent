@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export const LOCAL_API = "http://127.0.0.1:8765";
 export const ACTION_HEADERS = { "Content-Type": "application/json", "X-Job-Agent-Action": "local-user-approved" };
 
-export type Page = "overview" | "find" | "opportunities" | "details" | "resumes" | "profile";
+export type Page = "overview" | "find" | "opportunities" | "details" | "resumes" | "master" | "profile";
 export type DataMode = "demo" | "local";
 export type Match = "High Match" | "Review" | "Verify Eligibility" | "Conflict";
 

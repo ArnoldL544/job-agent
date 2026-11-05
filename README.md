@@ -11,7 +11,7 @@ Nothing is submitted automatically. Every resume is a draft for you to review, a
 - Rule-based screening: match level, OPT/CPT and eligibility flags, location
 - Chunk-based resume tailoring: picks the most relevant sections and bullets from your master resume, fills exactly one page, and polishes bullets with one OpenAI call
 - Offline preview of the chunk selection, with no API call
-- Next.js dashboard: job list, job details, resume preview/download/upload, profile editor, application tracker, schedule
+- Next.js dashboard: Find Jobs (Gmail import), jobs with location / pay / deadline / work authorization, tailored drafts with a review of what changed, a Master Resume page (what the editor reads, open fact questions, open in Word), application tracker, schedule
 - Local-only API on `127.0.0.1:8765`
 
 ## Architecture

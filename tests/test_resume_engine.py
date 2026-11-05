@@ -101,9 +101,58 @@ class ResumeEngineTests(unittest.TestCase):
         self.assertTrue(entries[0]['hasTextPreview'])
         self.assertTrue(all(p.suffix == '.docx' for p in api.resumes_for('12345')))
 
+    def test_master_overview_and_open(self):
+        from resume_chunks import parse_docx
+        from test_chunk_composition_v04 import create_master
+        self.assertEqual(api.master_overview(), {'found': False})
+        master = api.ROOT / 'Resume_Master Test.docx'
+        create_master(master)
+        selection = api.RESUMES / '12345_20261104_131313_000003_chunk_tailored.selection.json'
+        try:
+            bullet = parse_docx(master)['entries'][0]['bullets'][0]
+            selection.write_text(json.dumps({'writer_v06': {'fact_questions': [
+                {'bullet_id': bullet['id'], 'question': 'How long did processing take?'},
+                {'bullet_id': bullet['id'], 'question': 'how long did processing take?'},  # duplicate, merged
+                {'bullet_id': 'bullet_edited_away', 'question': 'Old question'}]}}), encoding='utf-8')
+            overview = api.master_overview()
+            self.assertTrue(overview['found'])
+            self.assertEqual(overview['filename'], 'Resume_Master Test.docx')
+            self.assertEqual(overview['entries'][0]['title'], 'Amazon China')
+            self.assertEqual(len(overview['openQuestions']), 1)
+            self.assertEqual(overview['openQuestions'][0]['bullet'], bullet['text'])
+            self.assertEqual(overview['openQuestions'][0]['questions'],
+                             [{'question': 'How long did processing take?', 'jobs': ['Acme — SWE Intern']}])
+            self.assertEqual(overview['resolvedQuestions'], 1)
+            opened = []
+            original = api.OPEN_FILE
+            try:
+                api.OPEN_FILE = opened.append
+                self.assertEqual(self.status_of_path('/api/master/open', {}), 200)
+                self.assertEqual(opened, [str(master)])
+                api.OPEN_FILE = None
+                self.assertEqual(self.status_of_path('/api/master/open', {}), 501)
+            finally:
+                api.OPEN_FILE = original
+        finally:
+            master.unlink(missing_ok=True)
+            selection.unlink(missing_ok=True)
+
+    def status_of_path(self, path, data):
+        req = Request(f'http://127.0.0.1:{self.port}{path}', data=json.dumps(data).encode('utf-8'),
+                      headers={'Origin': 'http://localhost:3000', 'Content-Type': 'application/json',
+                               'X-Job-Agent-Action': 'local-user-approved'}, method='POST')
+        try:
+            with urlopen(req, timeout=4) as response:
+                return response.status
+        except HTTPError as exc:
+            exc.close()
+            return exc.code
+
     def test_draft_summary_for_review_page(self):
         docx = api.RESUMES / '12345_20261104_121212_000002_chunk_tailored.docx'
         docx.write_bytes(b'PK\x03\x04FAKE')
+        self.addCleanup(docx.unlink, missing_ok=True)
+        self.addCleanup(docx.with_suffix('.selection.json').unlink, missing_ok=True)
         docx.with_suffix('.selection.json').write_text(json.dumps({
             'entries': [{'id': 'e1', 'title': 'Amazon China', 'bullets': [
                 {'id': 'b1', 'text': 'Processed 7.8 million ratings.'}, {'id': 'b2', 'text': 'Benchmarked four models.'}]}],

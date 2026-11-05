@@ -517,6 +517,80 @@ def draft_summary(docx: Path) -> dict | None:
             "pageCount": check.get("pages")}
 
 
+# os.startfile exists on Windows only; tests replace this seam.
+OPEN_FILE = getattr(os, "startfile", None)
+
+
+def master_overview() -> dict:
+    """The master resume as the chunk editor sees it, plus open fact questions.
+
+    Questions come from every chunk draft's review data. A question stays open
+    while its bullet is unchanged in the master (bullet IDs hash the text), so
+    editing that bullet in Word closes it.
+    """
+    master = master_resume()
+    if master is None:
+        return {"found": False}
+    try:
+        from resume_chunks import parse_docx
+        parsed = parse_docx(master)
+    except Exception as exc:  # parser errors are shown to the user, never fatal
+        return {"found": True, "filename": master.name, "error": f"Could not read the master resume: {exc}"[:300]}
+    bullets = {b["id"]: (e, b) for e in parsed["entries"] for b in e["bullets"]}
+    titles = {jid: str(row.get("title") or "") for jid, row in merged_jobs().items()}
+    companies = {jid: str(row.get("company") or "") for jid, row in merged_jobs().items()}
+    open_q: dict[str, dict] = {}
+    resolved = 0
+    for path in sorted(RESUMES.glob("*_chunk_tailored.selection.json"), key=lambda p: p.stat().st_mtime) if RESUMES.is_dir() else []:
+        if path.stat().st_size > 2_000_000:
+            continue
+        try:
+            writer = json.loads(path.read_text(encoding="utf-8")).get("writer_v06") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        jid = path.name.split("_", 1)[0]
+        for q in writer.get("fact_questions", []) if isinstance(writer, dict) else []:
+            if not isinstance(q, dict) or not isinstance(q.get("question"), str):
+                continue
+            bid = str(q.get("bullet_id"))
+            if bid not in bullets:
+                resolved += 1
+                continue
+            entry, bullet = bullets[bid]
+            item = open_q.setdefault(bid, {"bulletId": bid, "bullet": bullet["text"][:600], "section": entry["title"][:160], "questions": []})
+            text = q["question"].strip()[:300]
+            job = f"{companies.get(jid, '')} — {titles.get(jid, '')}".strip(" —")
+            existing = next((x for x in item["questions"] if x["question"].casefold() == text.casefold()), None)
+            if existing is None:
+                item["questions"].append({"question": text, "jobs": [job] if job else []})
+            elif job and job not in existing["jobs"]:
+                existing["jobs"].append(job)
+    return {
+        "found": True, "filename": master.name,
+        "updatedAt": datetime.fromtimestamp(master.stat().st_mtime, tz=timezone.utc).isoformat(),
+        "header": [h["text"][:200] for h in parsed["header"]][:6],
+        "education": [e["text"][:300] for e in parsed["education"]][:20],
+        "skills": [s["text"][:300] for s in parsed["skills"]][:12],
+        "entries": [{"title": e["title"][:160], "role": e.get("role", "")[:160], "dates": e.get("dates", "")[:80],
+                     "kind": e.get("kind", ""), "bullets": [b["text"][:600] for b in e["bullets"]][:12]}
+                    for e in parsed["entries"]][:30],
+        "warnings": [str(w)[:200] for w in parsed.get("warnings", [])][:10],
+        "openQuestions": list(open_q.values())[:30],
+        "resolvedQuestions": resolved,
+        "canOpen": OPEN_FILE is not None,
+    }
+
+
+def open_master() -> tuple[dict, int]:
+    master = master_resume()
+    if master is None:
+        return {"error": "No Resume_<Name>.docx in the project folder"}, 404
+    if OPEN_FILE is None:
+        return {"error": "Opening files is only supported on Windows"}, 501
+    OPEN_FILE(str(master))
+    return {"opened": master.name}, 200
+
+
 def resume_entries() -> list[dict]:
     rows = merged_jobs()
     entries = []
@@ -684,6 +758,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True, "mode": "local-only", "stage": "product-v1"})
         if path == "/api/profile":
             return self.send_json({"profile": get_profile()})
+        if path == "/api/master":
+            return self.send_json(master_overview())
         if path == "/api/tracker":
             return self.send_json({"applications": read_tracker()})
         if path == "/api/schedule":
@@ -749,7 +825,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "Action header missing"}, 403)
         path = urlsplit(self.path).path
         upload = re.fullmatch(r"/api/resumes/([0-9]{1,18})/upload", path)
-        if path not in {"/api/tasks", "/api/profile", "/api/tracker", "/api/schedule"} and not upload:
+        if path not in {"/api/tasks", "/api/profile", "/api/tracker", "/api/schedule", "/api/master/open"} and not upload:
             return self.send_json({"error": "Not found"}, 404)
         if upload:
             if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -780,6 +856,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "Invalid JSON"}, 400)
         if not isinstance(payload, dict):
             return self.send_json({"error": "Expected JSON object"}, 400)
+        if path == "/api/master/open":
+            result, status = open_master()
+            return self.send_json(result, status)
         if path == "/api/profile":
             try:
                 cleaned = validate_profile(payload.get("profile"))
