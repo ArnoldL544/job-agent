@@ -174,6 +174,8 @@ export default function Home() {
   const selected = jobs.find(j => j.id === selectedId) ?? jobs[0];
   const activeMenu = page === "profile" ? "master" : LIST_PAGES.includes(page) || page === "details" ? "overview" : page;
   const hero = TITLES[page];
+  // Ticks on Home and "Applied"-type statuses share one tracker; count only jobs still in the list.
+  const appliedCount = jobs.filter(j => applied.includes(j.id)).length;
   const listTitle = listPage === "overview" ? "Home" : TITLES[listPage].title;
   const crumb = page === "details" ? (listPage === "overview" ? `Home / ${selected.company}` : `Home / ${listTitle} / ${selected.company}`)
     : page === "profile" ? "Master Resume / My Profile"
@@ -192,7 +194,12 @@ export default function Home() {
     <main className="main-content">
       <header className="topbar"><div className="topbar-left"><button className="mobile-menu icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Icon name="menu" size={20}/></button><span className="breadcrumb-active">{crumb}</span></div></header>
       <div className="page-content">
-        <div className="page-heading"><div><h1>{hero.title}<span className="title-accent">.</span></h1><p>{hero.subtitle}</p></div></div>
+        <div className="page-heading"><div><h1>{hero.title}<span className="title-accent">.</span></h1><p>{hero.subtitle}</p></div>
+          {page === "overview" && <div className="applied-total" title="Jobs you ticked as applied on Home (or set to Applied on the job page)">
+            <span className="applied-total-icon"><Icon name="check" size={20}/></span>
+            <span><strong>{appliedCount}</strong><small>{appliedCount === 1 ? "job applied" : "jobs applied"}</small></span>
+          </div>}
+        </div>
         {!local && <div className="demo-notice"><Icon name="info" size={18}/><span><strong>Sample data.</strong> The local API is not running, so the companies and scores shown are fictional. Start the app with start.bat to see your own jobs.</span></div>}
 
         {page === "overview" && <HomePage dataMode={dataMode} jobs={jobs} resumes={resumes} shortlisted={shortlisted} applied={applied}

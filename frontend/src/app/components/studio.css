@@ -182,3 +182,8 @@
 .draft-latest{border-color:rgba(59,222,189,.4);color:#6fdcc4}
 .draft-review{white-space:nowrap}
 .draft-list-error{margin:0 24px 8px}
+/* Home: applied count, right of the page title */
+.applied-total{display:flex;align-items:center;gap:13px;padding:12px 20px 12px 14px;border-radius:13px;border:1px solid rgba(59,222,189,.3);background:linear-gradient(160deg,rgba(21,47,48,.75),rgba(14,28,37,.9));flex-shrink:0}
+.applied-total-icon{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:rgba(59,222,189,.16);color:#3bdebd}
+.applied-total strong{display:block;font-size:30px;font-weight:800;letter-spacing:-1px;line-height:1;color:#eaf3fc}
+.applied-total small{display:block;margin-top:4px;font-size:12px;font-weight:600;color:#8fd9c8}
