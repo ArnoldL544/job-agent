@@ -17,7 +17,7 @@ export type Job = {
 };
 export type JobDetail = { jobId: string; hasJd: boolean; jdText: string; jdFilename: string | null; priority: string; screeningNotes: string[] };
 export type DraftKind = "tailored" | "profile" | "uploaded";
-export type ResumeRecord = { id: string; jobId: string; index: number; company: string; jobTitle: string; filename: string; updatedAt: string; hasTextPreview: boolean; kind?: DraftKind };
+export type ResumeRecord = { id: string; jobId: string; index: number; company: string; jobTitle: string; filename: string; updatedAt: string; hasTextPreview: boolean; kind?: DraftKind; downloadName?: string };
 export type DraftSummary = {
   model: string; focus: string[]; questions: { question: string; bullet: string }[];
   changes: { section: string; kind: "rewritten" | "merged"; before: string[]; after: string }[];

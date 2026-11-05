@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timezone, date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 JOBS = ROOT / "jobs"
@@ -471,6 +471,17 @@ def safe_read_text(path: Path, limit: int) -> str:
     return path.read_text(encoding="utf-8-sig", errors="replace")
 
 
+def download_name(title: object) -> str:
+    """'<Job title>_resume.docx' with characters Windows forbids in file names removed.
+
+    Files on disk keep their unique '<job id>_<timestamp>_...' names; only the
+    downloaded copy is named after the job.
+    """
+    clean = re.sub(r'[<>:"/\\|?*\x00-\x1f]', " ", str(title or ""))
+    clean = re.sub(r"\s+", " ", clean).strip(" .")[:100].strip(" .")
+    return f"{clean or 'Job'}_resume.docx"
+
+
 def draft_kind(path: Path) -> str:
     if path.name.endswith("_chunk_tailored.docx"):
         return "tailored"
@@ -601,7 +612,7 @@ def resume_entries() -> list[dict]:
                             "company": str(row.get("company") or "Unknown company")[:180],
                             "jobTitle": str(row.get("title") or "Untitled position")[:200],
                             "filename": path.name, "updatedAt": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat(),
-                            "kind": draft_kind(path),
+                            "kind": draft_kind(path), "downloadName": download_name(row.get("title")),
                             "hasTextPreview": md.is_file()})
     entries.sort(key=lambda item: item["updatedAt"], reverse=True)
     return entries
@@ -798,7 +809,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "Resume not found"}, 404)
             docx = paths[idx]
             if action == "download":
-                return self.send_docx(docx)
+                return self.send_docx(docx, download_name(merged_jobs()[jid].get("title")))
             markdown = docx.with_suffix(".md")
             if markdown.is_file():
                 preview = safe_read_text(markdown, MAX_PREVIEW_BYTES)
@@ -915,13 +926,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_docx(self, path: Path) -> None:
+    def send_docx(self, path: Path, filename: str | None = None) -> None:
         if path.stat().st_size > MAX_DOCX_BYTES:
             return self.send_json({"error": "Word document exceeds download size limit"}, 413)
         data = path.read_bytes()
+        name = filename or path.name
+        # ASCII fallback for old clients plus the UTF-8 name (RFC 6266 / 5987).
+        fallback = re.sub(r"[^A-Za-z0-9 ._()&,+-]", "", name).strip() or "resume.docx"
         self.send_response(200)
         self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        self.send_header("Content-Disposition", f"attachment; filename=\"{path.name}\"")
+        self.send_header("Content-Disposition", f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name)}")
         self.send_header("Content-Length", str(len(data)))
         self.common_headers()
         self.end_headers()

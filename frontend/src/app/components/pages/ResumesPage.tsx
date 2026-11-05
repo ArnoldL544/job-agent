@@ -110,14 +110,14 @@ function DraftView({ group, version, onVersion, onUploaded }: { group: Group; ve
   return <section className="panel studio-view">
     <div className="studio-view-head">
       <div><div className="panel-title">{group.title}</div><div className="panel-subtitle">{group.company} · {group.jobId}</div></div>
-      <a className="primary-button" href={`${LOCAL_API}/api/resumes/${version.jobId}/${version.index}/download`}><Icon name="download" size={17}/> Download Word</a>
+      <a className="primary-button" href={`${LOCAL_API}/api/resumes/${version.jobId}/${version.index}/download`} title={version.downloadName ? `Saves as ${version.downloadName}` : undefined}><Icon name="download" size={17}/> Download Word</a>
     </div>
     {group.versions.length > 1 && <div className="version-tabs" role="tablist">
       {group.versions.map((v, i) => <button key={v.id} role="tab" aria-selected={v.id === version.id} className={v.id === version.id ? "active" : ""} onClick={() => onVersion(v.id)}>
         {i === 0 ? "Latest" : new Date(v.updatedAt).toLocaleDateString()}<small>{KIND_LABEL[v.kind ?? "profile"]}</small>
       </button>)}
     </div>}
-    <p className="stage4-muted studio-meta">{KIND_LABEL[version.kind ?? "profile"]} · {new Date(version.updatedAt).toLocaleString()}{summary?.model ? ` · ${summary.model}` : ""}{summary?.pageCount ? ` · ${summary.pageCount} page` : ""}</p>
+    <p className="stage4-muted studio-meta">{KIND_LABEL[version.kind ?? "profile"]} · {new Date(version.updatedAt).toLocaleString()}{summary?.model ? ` · ${summary.model}` : ""}{summary?.pageCount ? ` · ${summary.pageCount} page` : ""}{version.downloadName ? ` · downloads as ${version.downloadName}` : ""}</p>
 
     {!current ? <p className="stage4-muted">Loading…</p> : current.error ? <p className="stage4-warning">{current.error}</p> : summary ? <>
       {summary.focus.length > 0 && <div className="studio-block"><h3>What this job values</h3><div className="focus-chips">{summary.focus.map(f => <span key={f}>{f}</span>)}</div></div>}

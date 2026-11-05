@@ -148,6 +148,25 @@ class ResumeEngineTests(unittest.TestCase):
             exc.close()
             return exc.code
 
+    def test_download_is_named_after_the_job(self):
+        self.assertEqual(api.download_name('Software Engineer Intern'), 'Software Engineer Intern_resume.docx')
+        self.assertEqual(api.download_name('Gameplay Programmer Intern / 游戏客户端程序实习'),
+                         'Gameplay Programmer Intern 游戏客户端程序实习_resume.docx')
+        self.assertEqual(api.download_name('A: B? "C" <D>|E*'), 'A B C D E_resume.docx')
+        self.assertEqual(api.download_name(None), 'Job_resume.docx')
+        docx = api.RESUMES / '12345_20261104_141414_000004_chunk_tailored.docx'
+        docx.write_bytes(b'PK\x03\x04FAKE')
+        self.addCleanup(docx.unlink, missing_ok=True)
+        index = next(i for i, p in enumerate(api.resumes_for('12345')) if p.name == docx.name)
+        req = Request(f'http://127.0.0.1:{self.port}/api/resumes/12345/{index}/download', headers={'Origin': 'http://localhost:3000'})
+        with urlopen(req, timeout=4) as response:
+            disposition = response.headers['Content-Disposition']
+            self.assertEqual(response.read(), b'PK\x03\x04FAKE')
+        self.assertIn('filename="SWE Intern_resume.docx"', disposition)
+        self.assertIn("filename*=UTF-8''SWE%20Intern_resume.docx", disposition)
+        entry = next(e for e in api.resume_entries() if e['filename'] == docx.name)
+        self.assertEqual(entry['downloadName'], 'SWE Intern_resume.docx')
+
     def test_draft_summary_for_review_page(self):
         docx = api.RESUMES / '12345_20261104_121212_000002_chunk_tailored.docx'
         docx.write_bytes(b'PK\x03\x04FAKE')
